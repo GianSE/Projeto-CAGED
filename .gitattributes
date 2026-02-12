@@ -1,0 +1,13 @@
+# Forçar LF dentro do repositório
+* text=auto
+
+# Forçar arquivos específicos a sempre serem LF
+*.py text eol=lf
+*.sh text eol=lf
+*.json text eol=lf
+*.sql text eol=lf
+*.csv text eol=lf
+
+# Markdown e textos simples podem ficar com padrão do sistema
+*.md text
+*.txt text

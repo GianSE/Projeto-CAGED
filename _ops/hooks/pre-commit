@@ -1,0 +1,35 @@
+#!/bin/bash
+echo "🛡️  [Git Hook] Iniciando bateria de testes inteligente..."
+
+# 1. Pega apenas arquivos Python (.py) que estão Staged (prontos para commit)
+# --diff-filter=ACM ignora arquivos deletados (D)
+FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.py$")
+
+# 2. Se não tiver arquivos Python modificados, pula a validação
+if [ -z "$FILES" ]; then
+    echo "⏩ Nenhum arquivo Python modificado. Pulando verificação de imports."
+    exit 0
+fi
+
+# --- ETAPA 1: VALIDAR IMPORTS (Apenas Modificados) ---
+CHECK_SCRIPT="_ops/check_imports.py"
+
+if [ -f "$CHECK_SCRIPT" ]; then
+    echo "🔍 Verificando imports em:"
+    echo "$FILES" | sed 's/^/   - /' # Lista bonitinha os arquivos
+    
+    # Passa a lista de arquivos como argumentos para o script Python
+    # O Python precisa estar preparado para receber argumentos!
+    python "$CHECK_SCRIPT" $FILES
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ [FALHA] Erro de importação detectado nos arquivos acima."
+        echo "   Corrija o erro antes de comitar."
+        exit 1
+    fi
+else
+    echo "⚠️  Script $CHECK_SCRIPT não encontrado. Pulando etapa."
+fi
+
+echo "✅ TUDO LIMPO! Commit autorizado."
+exit 0

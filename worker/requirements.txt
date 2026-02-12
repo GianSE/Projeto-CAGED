@@ -1,0 +1,9 @@
+duckdb
+sqlalchemy
+mariadb
+polars
+python-dotenv
+pyarrow
+s3fs
+boto3
+py7zr

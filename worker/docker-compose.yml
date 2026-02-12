@@ -1,0 +1,15 @@
+services:
+  worker:
+    image: custom-worker:3.6.13-python3.12
+    build:
+      context: ..                       
+      dockerfile: worker/Dockerfile
+    restart: always
+    volumes:
+      - ../:/app
+      - C:/deploy_metadata:/app/_metadata
+      # ADICIONE ESTA LINHA: Mapeia seu D: para /data dentro do container
+      - "D:/projetos/projeto-2026-01-13/MTPS_DADOS:/data/caged"
+      - "D:/temp_caged_extract:/tmp/extract"
+    environment:
+      - PYTHONPATH=/app:/app/flows_prefect:/app/tasks_python

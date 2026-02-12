@@ -1,0 +1,9 @@
+.env
+.env.worker
+dev.duckdb
+dev.duckdb.wal
+__pycache__
+.ruff_cache
+_ops/.deploy_hashes.json
+_ops/.requirements_hashes.json
+_ops/.deployments_hashes.json
