@@ -14,6 +14,9 @@ MINIO_BUCKET = "bronze"
 PATH_BASE_RAIS = Path("/data/caged/RAIS") 
 TEMP_EXTRACT_PATH = Path("/tmp/extract_rais")
 
+# ⚠️ ATENÇÃO: Se os dados ficarem "grudados" em uma coluna só, mude para ';'
+DELIMITADOR = ',' 
+
 # --- CONEXÃO DUCKDB ---
 con = duckdb.connect()
 con.execute("INSTALL httpfs; LOAD httpfs;")
@@ -30,7 +33,7 @@ con.execute(f"""
 def scrub_and_fix_file(filepath):
     """ 
     Converte Latin-1 para UTF-8, remove bytes nulos e
-    faz o TRIM manual de espaços em cada campo da linha.
+    faz o TRIM manual de espaços usando o delimitador configurado.
     """
     print(f"    🧹 Iniciando cirurgia no arquivo (Scrubbing): {filepath.name}")
     temp_clean = filepath.with_name(filepath.name + ".clean")
@@ -48,12 +51,11 @@ def scrub_and_fix_file(filepath):
                     lines_dropped += 1
                     continue
                 
-                # 2. LIMPEZA DE ESPAÇOS (HEX 20)
-                # Quebramos a linha, limpamos cada campo e juntamos de novo
-                # Isso garante que o Hex 20 suma de todos os campos
-                parts = line.split(';')
+                # 2. LIMPEZA DE ESPAÇOS E APLICAÇÃO DO DELIMITADOR
+                # Usa a variável global DELIMITADOR para separar e limpar
+                parts = line.split(DELIMITADOR)
                 clean_parts = [p.strip() for p in parts]
-                clean_line = ";".join(clean_parts)
+                clean_line = DELIMITADOR.join(clean_parts)
                 
                 # 3. Verifica conteúdo mínimo
                 if len(clean_line) < 2:
@@ -73,7 +75,7 @@ def scrub_and_fix_file(filepath):
         return False
 
 def process_rais():
-    # Limpeza preventiva
+    # Limpeza preventiva da pasta temporária
     if TEMP_EXTRACT_PATH.exists():
         for item in TEMP_EXTRACT_PATH.iterdir():
             try:
@@ -82,11 +84,13 @@ def process_rais():
             except: pass
     TEMP_EXTRACT_PATH.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n🚀 INICIANDO INGESTÃO RAIS (2020-2024)")
+    print(f"\n🚀 INICIANDO INGESTÃO RAIS (2024 e 2023)")
 
-    for year in range(2024, 2022, -1):
+    # LOOP APENAS NOS ANOS SOLICITADOS
+    for year in [2024, 2023]:
         year_path = PATH_BASE_RAIS / str(year)
         if not year_path.exists():
+            print(f"⚠️ Pasta do ano {year} não encontrada em {year_path}")
             continue
 
         print(f"\n📂 --- ANO: {year} ---")
@@ -103,9 +107,19 @@ def process_rais():
             subprocess.run(["7z", "e", str(archive_path), f"-o{str(TEMP_EXTRACT_PATH)}", "-y"], 
                            capture_output=True, check=False)
 
+            # Busca candidatos e renomeia COMT para TXT se necessário
             candidates = []
-            for ext in ["*.txt", "*.csv", "*.comt", "*.TXT", "*.CSV", "*.COMT"]:
-                candidates.extend(list(TEMP_EXTRACT_PATH.glob(ext)))
+            raw_files = list(TEMP_EXTRACT_PATH.glob("*"))
+            
+            for f in raw_files:
+                # Se for .COMT, renomeia para .txt
+                if f.suffix.upper() == '.COMT':
+                    new_name = f.with_suffix('.txt')
+                    f.rename(new_name)
+                    candidates.append(new_name)
+                    print(f"    🔄 Renomeado {f.name} -> {new_name.name}")
+                elif f.suffix.upper() in ['.TXT', '.CSV']:
+                    candidates.append(f)
 
             for local_file in candidates:
                 if local_file.stat().st_size < 10240: continue 
@@ -119,15 +133,16 @@ def process_rais():
 
                     try:
                         print(f"    🔄 DuckDB -> S3 ({s3_path})")
+                        # Usando read_csv com o DELIMITADOR configurado
                         con.execute(f"""
                             COPY (
                                 SELECT 
                                     *,
                                     {year}::INT as ano_particao,
                                     '{archive_path.name}' as arquivo_origem
-                                FROM read_csv_auto(
+                                FROM read_csv(
                                     '{str(local_file)}',
-                                    delim=';',
+                                    delim='{DELIMITADOR}',
                                     header=True,
                                     all_varchar=True,
                                     encoding='utf-8',

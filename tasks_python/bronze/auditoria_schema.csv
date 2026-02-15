@@ -1,0 +1,47 @@
+COLUNA;2024;2023;2022;2021;2020
+Bairros Fortaleza;;;OK;OK;OK
+Bairros Fortaleza - Código;OK;OK;;;
+Bairros RJ;;;OK;OK;OK
+Bairros RJ - Código;OK;OK;;;
+Bairros SP;;;OK;OK;OK
+Bairros SP - Código;OK;OK;;;
+CEP Estab;OK;OK;OK;OK;OK
+CNAE 2.0 Classe;;;OK;OK;OK
+CNAE 2.0 Classe - Código;OK;OK;;;
+CNAE 2.0 Subclasse;;;OK;OK;OK
+CNAE 2.0 Subclasse - Código;OK;OK;;;
+CNAE 95 Classe;;;OK;OK;OK
+CNAE 95 Classe - Código;OK;OK;;;
+Distritos SP;;;OK;OK;OK
+Distritos SP - Código;OK;OK;;;
+IBGE Subsetor;;;OK;OK;OK
+IBGE Subsetor - Código;OK;OK;;;
+Ind Atividade Ano;;;OK;OK;OK
+Ind Atividade Ano - Código;OK;OK;;;
+Ind CEI Vinculado;;;OK;OK;OK
+Ind CEI Vinculado - Código;OK;OK;;;
+Ind Estab Participa PAT;;;OK;OK;OK
+Ind Estab Participante PAT - Código;OK;OK;;;
+Ind Estab Participante SIMPLES - Código;OK;OK;;;
+Ind RAIS Negativa - Código;OK;OK;;;
+Ind Rais Negativa;;;OK;OK;OK
+Ind Simples;;;OK;OK;OK
+Município;;;OK;OK;OK
+Município - Código;OK;OK;;;
+Natureza Jurídica;;;OK;OK;OK
+Natureza Jurídica - Código;OK;OK;;;
+Qtd Vínculos Ativos;OK;OK;OK;OK;OK
+Qtd Vínculos CLT;OK;OK;OK;OK;OK
+Qtd Vínculos Estatutários;OK;OK;OK;OK;OK
+Região Adm DF - Código;OK;OK;;;
+Regiões Adm DF;;;OK;OK;OK
+Tamanho Estabelecimento;;;OK;OK;OK
+Tamanho Estabelecimento - Código;OK;OK;;;
+Tipo Estab;;;OK;OK;OK
+Tipo Estab_1;;;OK;OK;OK
+Tipo Estabelecimento - Código;OK;OK;;;
+UF;;;OK;OK;OK
+UF - Código;OK;OK;;;
+ano;OK;OK;OK;OK;OK
+ano_particao;OK;OK;OK;OK;OK
+arquivo_origem;OK;OK;OK;OK;OK
