@@ -8,3 +8,4 @@ _ops/.deploy_hashes.json
 _ops/.requirements_hashes.json
 _ops/.deployments_hashes.json
 erros_ingestao_rais.txt
+env.py

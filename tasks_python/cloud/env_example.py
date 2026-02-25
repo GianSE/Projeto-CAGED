@@ -1,0 +1,1 @@
+string_azure = "string_completa"
