@@ -12,7 +12,7 @@ CONTAINER = "bronze"
 # Onde os arquivos soltos vão ficar temporariamente
 PASTA_BACKUP_BASE = "./bkp_temporario" 
 # Onde os Zips finais serão salvos
-PASTA_DESTINO_ZIPS = "tasks_python/backup/tcc_backup_bronze" 
+PASTA_DESTINO_ZIPS = "./tcc_backup_bronze" 
 
 MAX_WORKERS = 6
 
