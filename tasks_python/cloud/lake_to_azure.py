@@ -1,91 +1,94 @@
-import os
-import time
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from azure.storage.blob import BlobServiceClient
+import s3fs
+import adlfs
+import polars as pl
+import concurrent.futures
 from env import string_azure
 
-# 1. Configurações
-AZURE_CONNECTION_STRING = string_azure
-CONTAINER_NAME = "bronze"
+# --- CONFIGURAÇÕES ---
+PREFIXO_NUVEM = "caged_old"
+CONTAINER = "bronze"
+ANOS_COM_ERRO = range(2007, 2020) # Ajuste a sua lista de anos aqui
+MAX_WORKERS = 4
 
-# O caminho exato da sua pasta bronze local
-LOCAL_BASE_DIR = r"D:\lakehouse\minio\minio_data\bronze"
+# --- CREDENCIAIS ---
+S3_OPTIONS = {
+    "aws_access_key_id": "minioadmin",
+    "aws_secret_access_key": "minioadmin",
+    "endpoint_url": "http://localhost:9000",
+}
+fs_minio = s3fs.S3FileSystem(
+    key=S3_OPTIONS["aws_access_key_id"],
+    secret=S3_OPTIONS["aws_secret_access_key"],
+    client_kwargs={"endpoint_url": S3_OPTIONS["endpoint_url"]}
+)
 
-# As pastas que você quer pular
-PASTAS_PARA_PULAR = ["caged_ajustes", "caged_for", "caged_exc", "caged_mov", "menor_preco", "rais", "rais_estab"] 
+_azure_parts = dict(part.split("=", 1) for part in string_azure.split(";") if "=" in part)
+AZURE_OPTIONS = {
+    "account_name": _azure_parts["AccountName"],
+    "account_key": _azure_parts["AccountKey"],
+}
+fs_azure = adlfs.AzureBlobFileSystem(
+    account_name=AZURE_OPTIONS["account_name"],
+    account_key=AZURE_OPTIONS["account_key"]
+)
 
-# --- A MÁGICA DA VELOCIDADE ---
-# Quantos arquivos subir AO MESMO TEMPO (Recomendo 10 ou 20 para internet residencial)
-MAX_WORKERS = 10 
-
-# 2. A Função do "Trabalhador" (O que cada caixa do supermercado faz)
-def upload_single_file(arquivo_local, caminho_base, blob_service_client):
-    caminho_relativo = arquivo_local.relative_to(caminho_base)
-    destination_blob_path = caminho_relativo.as_posix()
+# --- FUNÇÃO DA THREAD ---
+def transferir_arquivo(caminho_relativo):
+    print(f"   -> Subindo: {caminho_relativo.split('/')[-1]} (Mês: {caminho_relativo.split('/')[-2]})")
     
-    # 1º Filtro: Pastas ignoradas
-    if caminho_relativo.parts[0] in PASTAS_PARA_PULAR:
-        return "ignorado_pasta"
+    # Reconstrói os caminhos absolutos
+    caminho_origem = f"s3://{CONTAINER}/{caminho_relativo}"
+    caminho_destino = f"az://{CONTAINER}/{caminho_relativo}"
 
-    blob_client = blob_service_client.get_blob_client(
-        container=CONTAINER_NAME, 
-        blob=destination_blob_path
-    )
-    
-    # 2º Filtro: Já existe na nuvem?
-    if blob_client.exists():
-        return "ignorado_nuvem"
-        
-    print(f"⬆️ Subindo: {destination_blob_path}")
-    
-    # 3º Ação: Faz o upload com Retry (Teimosia)
-    max_tentativas = 5
-    for tentativa in range(max_tentativas):
-        try:
-            with open(arquivo_local, "rb") as data:
-                # Timeout de 120s para dar fôlego à conexão
-                blob_client.upload_blob(data, overwrite=False, connection_timeout=120)
-            return "sucesso"
-        except Exception as e:
-            if tentativa < max_tentativas - 1:
-                time.sleep(5) # Espera 5s e tenta de novo
-            else:
-                print(f"❌ Falha definitiva no {destination_blob_path}. Erro: {e}")
-                return "erro"
-
-# 3. O Gerenciador (Quem organiza a fila)
-def upload_all_to_datalake():
     try:
-        print("Conectando ao Azure...")
-        blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
-        caminho_base = Path(LOCAL_BASE_DIR)
+        lf = pl.scan_parquet(caminho_origem, storage_options=S3_OPTIONS)
         
-        todos_arquivos = [f for f in caminho_base.rglob("*") if f.is_file()]
-        print(f"Encontrados {len(todos_arquivos)} arquivos. Ligando o motor turbo com {MAX_WORKERS} conexões simultâneas...\n")
-        
-        # Dicionário para guardar o placar final
-        placar = {"sucesso": 0, "ignorado_pasta": 0, "ignorado_nuvem": 0, "erro": 0}
+        # Como as partições ano_hive e mes_hive já estão na estrutura de pastas, 
+        # é boa prática remover do parquet se estiverem lá dentro.
+        colunas_schema = lf.collect_schema().names()
+        if "ano_hive" in colunas_schema:
+            lf = lf.drop("ano_hive")
+        if "mes_hive" in colunas_schema:
+            lf = lf.drop("mes_hive")
 
-        # --- A EXECUÇÃO EM PARALELO ---
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Entrega a lista de arquivos para os trabalhadores
-            futuros = [
-                executor.submit(upload_single_file, arquivo, caminho_base, blob_service_client) 
-                for arquivo in todos_arquivos
-            ]
-            
-            # Conforme os trabalhadores vão terminando, a gente anota no placar
-            for futuro in as_completed(futuros):
-                resultado = futuro.result()
-                placar[resultado] += 1
-                
-        print("\n✅ Sincronização Turbo concluída!")
-        print(f"📊 Resumo: {placar['sucesso']} enviados | {placar['ignorado_nuvem']} já existiam na Azure.")
-        print(f"🛡️ {placar['ignorado_pasta']} ignorados pela regra de pastas | {placar['erro']} falharam.")
-        
+        lf.sink_parquet(
+            caminho_destino,
+            compression="zstd",
+            storage_options=AZURE_OPTIONS,
+        )
+        print(f"   ✅ Sucesso: {caminho_relativo.split('/')[-1]}")
     except Exception as e:
-        print(f"❌ Deu erro crítico no script principal: {e}")
+        print(f"   ❌ Erro em {caminho_relativo}: {e}")
+
+# --- LOOP PRINCIPAL ---
+def curar_arquivos():
+    print("🩹 Iniciando migração MULTITHREAD corrigida...\n")
+    
+    for ano in ANOS_COM_ERRO:
+        pasta_base = f"{CONTAINER}/{PREFIXO_NUVEM}/ano_hive={ano}"
+
+        # Usando ** para buscar dentro dos meses
+        caminhos_minio = fs_minio.glob(f"{pasta_base}/**/*.parquet")
+        caminhos_azure = fs_azure.glob(f"{pasta_base}/**/*.parquet")
+
+        # Extrai o caminho relativo (ex: caged_mov/ano_hive=2007/mes_hive=01/arquivo.parquet)
+        # Isso garante que ele compare a pasta exata e o nome do arquivo.
+        relativos_minio = set([c.split(f"{CONTAINER}/")[1] for c in caminhos_minio])
+        relativos_azure = set([c.split(f"{CONTAINER}/")[1] for c in caminhos_azure])
+
+        arquivos_faltantes = relativos_minio - relativos_azure
+
+        if arquivos_faltantes:
+            print(f"\n⚠️ {ano}: Faltam {len(arquivos_faltantes)} arquivos. Iniciando upload em paralelo...")
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                # Passa o caminho relativo exato para a thread
+                executor.map(transferir_arquivo, arquivos_faltantes)
+                
+        else:
+            print(f"✅ {ano}: 100% sincronizado.")
+
+    print("\n🏁 Processo finalizado!")
 
 if __name__ == "__main__":
-    upload_all_to_datalake()
+    curar_arquivos()

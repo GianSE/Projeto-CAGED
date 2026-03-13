@@ -5,5 +5,6 @@ polars
 python-dotenv
 pyarrow
 s3fs
+adlfs
 boto3
 py7zr
