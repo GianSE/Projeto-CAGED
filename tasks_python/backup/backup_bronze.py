@@ -8,8 +8,13 @@ import concurrent.futures
 # Coloque aqui todas as tabelas que você quer fazer backup
 TABELAS = ["caged_ajustes", "caged_exc", "caged_for", "caged_mov", "caged_old", "rais_estab", "rais"] 
 CONTAINER = "bronze"
-PASTA_BACKUP_BASE = "./bkp_temporario" # Pasta onde os parquets vão ficar antes de zipar
-MAX_WORKERS = 6 
+
+# Onde os arquivos soltos vão ficar temporariamente
+PASTA_BACKUP_BASE = "./bkp_temporario" 
+# Onde os Zips finais serão salvos
+PASTA_DESTINO_ZIPS = "tasks_python/backup/tcc_backup_bronze" 
+
+MAX_WORKERS = 6
 
 # --- CONEXÃO MINIO ---
 S3_OPTIONS = {
@@ -26,8 +31,6 @@ fs_minio = s3fs.S3FileSystem(
 # --- FUNÇÃO DA THREAD ---
 def processar_backup_local(caminho_relativo):
     caminho_origem = f"s3://{caminho_relativo}"
-    
-    # Caminho no PC: ./bkp_temporario/bronze/nome_da_tabela/ano_hive=...
     caminho_destino_local = os.path.join(PASTA_BACKUP_BASE, caminho_relativo.replace("/", os.sep))
     
     os.makedirs(os.path.dirname(caminho_destino_local), exist_ok=True)
@@ -59,8 +62,11 @@ def processar_backup_local(caminho_relativo):
 def gerar_backups_modulares():
     print("📦 Iniciando extração e compactação por tabela...\n")
     
+    # Garante que a pasta final dos Zips exista
+    os.makedirs(PASTA_DESTINO_ZIPS, exist_ok=True)
+    
     for tabela in TABELAS:
-        print("=" * 50)
+        print("\n" + "=" * 50)
         print(f"🚀 INICIANDO TABELA: {tabela.upper()}")
         print("=" * 50)
         
@@ -68,7 +74,7 @@ def gerar_backups_modulares():
         caminhos_minio = fs_minio.glob(f"{pasta_base_minio}/**/*.parquet")
         
         if not caminhos_minio:
-            print(f"⚠️ Nenhum arquivo encontrado para '{tabela}'. Pulando...\n")
+            print(f"⚠️ Nenhum arquivo encontrado para '{tabela}'. Pulando...")
             continue
 
         print(f"📊 {len(caminhos_minio)} arquivos encontrados. Baixando e limpando...")
@@ -78,24 +84,30 @@ def gerar_backups_modulares():
             executor.map(processar_backup_local, caminhos_minio)
 
         # 2. Prepara os caminhos para o Zip
-        # A pasta que queremos zipar é: ./bkp_temporario/bronze/nome_da_tabela
         pasta_da_tabela_local = os.path.join(PASTA_BACKUP_BASE, CONTAINER, tabela)
-        nome_do_zip = f"./backup_{tabela}" # Vai gerar backup_caged_mov.zip, backup_rais.zip, etc.
+        
+        # O zip vai ser criado na pasta que você pediu: tasks_python/backup/tcc_backup_bronze/backup_caged_mov.zip
+        caminho_base_zip = os.path.join(PASTA_DESTINO_ZIPS, f"backup_{tabela}")
 
         print(f"\n🗜️ Todos os downloads de '{tabela}' concluídos! Gerando o arquivo .zip...")
         
         # 3. Compacta a tabela atual
         shutil.make_archive(
-            base_name=nome_do_zip, 
+            base_name=caminho_base_zip, 
             format="zip", 
             root_dir=pasta_da_tabela_local
         )
 
-        print(f"🎉 Zip da tabela '{tabela}' gerado com sucesso: {nome_do_zip}.zip\n")
+        print(f"🎉 Zip da tabela '{tabela}' gerado com sucesso em: {caminho_base_zip}.zip")
 
-    print("-" * 50)
+    # --- LIMPEZA FINAL ---
+    print("\n" + "-" * 50)
+    print("🧹 Limpando arquivos temporários do HD para liberar espaço...")
+    if os.path.exists(PASTA_BACKUP_BASE):
+        shutil.rmtree(PASTA_BACKUP_BASE)
+        
     print("🏁 PROCESSO DE BACKUP 100% FINALIZADO!")
-    print(f"Você já pode pegar os arquivos .zip gerados e subir no Google Drive.")
+    print(f"Seus Zips estão prontos na pasta: {PASTA_DESTINO_ZIPS}")
 
 if __name__ == "__main__":
     gerar_backups_modulares()
