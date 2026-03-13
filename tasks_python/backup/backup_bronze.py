@@ -1,13 +1,15 @@
 import os
+import shutil
 import s3fs
 import polars as pl
 import concurrent.futures
 
 # --- CONFIGURAÇÕES ---
-PREFIXO_NUVEM = "caged_mov"
+# Coloque aqui todas as tabelas que você quer fazer backup
+TABELAS = ["caged_ajustes", "caged_exc", "caged_for", "caged_mov", "caged_old", "rais_estab", "rais"] 
 CONTAINER = "bronze"
-PASTA_BACKUP_LOCAL = "./tcc_backup_bronze" # Nome da pasta que será criada no seu PC
-MAX_WORKERS = 6 # Como é pro disco local (SSD/HD), costuma ser mais rápido. Pode testar com 6 ou 8.
+PASTA_BACKUP_BASE = "./bkp_temporario" # Pasta onde os parquets vão ficar antes de zipar
+MAX_WORKERS = 6 
 
 # --- CONEXÃO MINIO ---
 S3_OPTIONS = {
@@ -23,64 +25,77 @@ fs_minio = s3fs.S3FileSystem(
 
 # --- FUNÇÃO DA THREAD ---
 def processar_backup_local(caminho_relativo):
-    # Ex: caminho_relativo = bronze/caged_mov/ano_hive=2020/mes_hive=01/arquivo.parquet
     caminho_origem = f"s3://{caminho_relativo}"
     
-    # Monta o caminho exato onde o arquivo vai ficar no seu PC
-    # os.sep garante que vai usar a barra certa do seu sistema operacional (\ no Windows, / no Linux)
-    caminho_destino_local = os.path.join(PASTA_BACKUP_LOCAL, caminho_relativo.replace("/", os.sep))
+    # Caminho no PC: ./bkp_temporario/bronze/nome_da_tabela/ano_hive=...
+    caminho_destino_local = os.path.join(PASTA_BACKUP_BASE, caminho_relativo.replace("/", os.sep))
     
-    # Cria as pastas e subpastas locais (se elas não existirem ainda)
     os.makedirs(os.path.dirname(caminho_destino_local), exist_ok=True)
 
-    # Se o arquivo já existir no seu PC, ele pula (excelente caso você precise pausar e recomeçar o script)
     if os.path.exists(caminho_destino_local):
         print(f"   ⏭️ Já baixado: {caminho_relativo.split('/')[-1]}")
         return
 
-    print(f"   -> Baixando e processando: {caminho_relativo.split('/')[-1]}")
-    
     try:
-        # Puxa via Streaming (Lazy) para economizar RAM
         lf = pl.scan_parquet(caminho_origem, storage_options=S3_OPTIONS)
         
-        # Limpa as colunas de partição (igual foi feito na Azure)
         colunas_schema = lf.collect_schema().names()
         if "ano_hive" in colunas_schema:
             lf = lf.drop("ano_hive")
         if "mes_hive" in colunas_schema:
             lf = lf.drop("mes_hive")
 
-        # Salva o arquivo no seu disco local (note que aqui não tem AZURE_OPTIONS, pois é local)
         lf.sink_parquet(
             caminho_destino_local,
-            compression="zstd"
+            compression="zstd",
+            row_group_size=250_000
         )
-        print(f"   ✅ Salvo no PC: {caminho_relativo.split('/')[-1]}")
+        print(f"   ✅ Salvo: {caminho_relativo.split('/')[-1]}")
         
     except Exception as e:
         print(f"   ❌ Erro em {caminho_relativo}: {e}")
 
 # --- LOOP PRINCIPAL ---
-def gerar_backup():
-    print(f"📦 Iniciando criação do clone local em '{PASTA_BACKUP_LOCAL}'...\n")
+def gerar_backups_modulares():
+    print("📦 Iniciando extração e compactação por tabela...\n")
     
-    pasta_base = f"{CONTAINER}/{PREFIXO_NUVEM}"
-    
-    print("🔍 Varrendo o MinIO para encontrar os arquivos (aguarde)...")
-    caminhos_minio = fs_minio.glob(f"{pasta_base}/**/*.parquet")
-    
-    if not caminhos_minio:
-        print("⚠️ Nenhum arquivo encontrado no MinIO.")
-        return
+    for tabela in TABELAS:
+        print("=" * 50)
+        print(f"🚀 INICIANDO TABELA: {tabela.upper()}")
+        print("=" * 50)
+        
+        pasta_base_minio = f"{CONTAINER}/{tabela}"
+        caminhos_minio = fs_minio.glob(f"{pasta_base_minio}/**/*.parquet")
+        
+        if not caminhos_minio:
+            print(f"⚠️ Nenhum arquivo encontrado para '{tabela}'. Pulando...\n")
+            continue
 
-    print(f"📊 Encontrados {len(caminhos_minio)} arquivos. Iniciando download multithread...\n")
+        print(f"📊 {len(caminhos_minio)} arquivos encontrados. Baixando e limpando...")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # Passamos a lista de arquivos para as threads trabalharem juntas
-        executor.map(processar_backup_local, caminhos_minio)
+        # 1. Baixa os arquivos da tabela atual
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            executor.map(processar_backup_local, caminhos_minio)
 
-    print(f"\n🏁 Backup 100% finalizado! A pasta '{PASTA_BACKUP_LOCAL}' está pronta.")
+        # 2. Prepara os caminhos para o Zip
+        # A pasta que queremos zipar é: ./bkp_temporario/bronze/nome_da_tabela
+        pasta_da_tabela_local = os.path.join(PASTA_BACKUP_BASE, CONTAINER, tabela)
+        nome_do_zip = f"./backup_{tabela}" # Vai gerar backup_caged_mov.zip, backup_rais.zip, etc.
+
+        print(f"\n🗜️ Todos os downloads de '{tabela}' concluídos! Gerando o arquivo .zip...")
+        
+        # 3. Compacta a tabela atual
+        shutil.make_archive(
+            base_name=nome_do_zip, 
+            format="zip", 
+            root_dir=pasta_da_tabela_local
+        )
+
+        print(f"🎉 Zip da tabela '{tabela}' gerado com sucesso: {nome_do_zip}.zip\n")
+
+    print("-" * 50)
+    print("🏁 PROCESSO DE BACKUP 100% FINALIZADO!")
+    print(f"Você já pode pegar os arquivos .zip gerados e subir no Google Drive.")
 
 if __name__ == "__main__":
-    gerar_backup()
+    gerar_backups_modulares()
