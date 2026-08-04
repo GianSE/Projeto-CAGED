@@ -21,6 +21,11 @@ Errar para o lado do Latin-1 é o caso perigoso: o parser não acusa erro nenhum
 e grava mojibake silenciosamente ("competência" vira "competÃªncia"). Por isso
 o encoding é detectado por arquivo, e não assumido.
 
+DELIMITADOR: também não é fixo. O CAGED é sempre ';', mas alguns arquivos da
+RAIS vêm com ',' (documentado nos scripts antigos do projeto,
+bronze_rais/correcao_7z.py) — fixar ';' nesses casos gruda a linha inteira
+numa coluna só. Detectado por arquivo, contando os dois na primeira linha.
+
 Se mesmo assim a leitura falhar (alguns arquivos da RAIS têm null bytes que
 quebram o parser), o módulo faz uma limpeza física do arquivo e tenta de novo.
 """
@@ -43,7 +48,28 @@ def _sql_str(valor: str) -> str:
     return valor.replace("'", "''")
 
 
-def _opcoes_leitura(arquivos: list[Path], encoding: str) -> str:
+def detectar_delimitador(arquivo: Path) -> str:
+    """
+    Descobre se o CSV usa ';' ou ',' como separador.
+
+    O CAGED é sempre ';', mas a RAIS não — scripts antigos do projeto
+    (bronze_rais/correcao_7z.py) documentam que alguns arquivos vêm com ','
+    e viram "tudo grudado numa coluna só" se o delimitador for fixado errado.
+    Conta os dois na primeira linha (o cabeçalho): o separador de verdade
+    aparece uma vez a menos que o número de colunas, o outro é raro/ausente.
+    """
+    try:
+        with open(arquivo, "r", encoding="latin-1", errors="replace") as f:
+            primeira_linha = f.readline()
+    except Exception:
+        return ";"
+
+    pontovirgula = primeira_linha.count(";")
+    virgula = primeira_linha.count(",")
+    return ";" if pontovirgula >= virgula else ","
+
+
+def _opcoes_leitura(arquivos: list[Path], encoding: str, delimitador: str = ";") -> str:
     """Monta a chamada read_csv com as opções de parsing dos microdados do MTE."""
     if len(arquivos) == 1:
         alvo = f"'{_sql_str(arquivos[0].as_posix())}'"
@@ -53,7 +79,7 @@ def _opcoes_leitura(arquivos: list[Path], encoding: str) -> str:
 
     opcoes = [
         alvo,
-        "delim=';'",
+        f"delim='{delimitador}'",
         "header=true",
         "all_varchar=true",
         "normalize_names=true",
@@ -235,12 +261,13 @@ def converter(con, arquivos: list[Path], item: ItemTrabalho) -> tuple[bool, int]
         nomes += f" (+{len(arquivos) - 3})"
     print(f"      📄 {len(arquivos)} arquivo(s): {nomes}")
 
-    # 1ª tentativa: leitura direta no encoding detectado (rápida, sem reescrever nada).
-    # O encoding é decidido pelo arquivo, não pela era — ver docstring do módulo.
+    # 1ª tentativa: leitura direta no encoding/delimitador detectados (rápida,
+    # sem reescrever nada). Nenhum dos dois é fixo pela era — ver docstring.
     encoding = detectar_encoding(arquivos[0])
-    print(f"      🔤 Encoding detectado: {encoding}")
+    delimitador = detectar_delimitador(arquivos[0])
+    print(f"      🔤 Encoding detectado: {encoding}  |  delimitador: '{delimitador}'")
     try:
-        linhas = _copiar(con, _opcoes_leitura(arquivos, encoding), item)
+        linhas = _copiar(con, _opcoes_leitura(arquivos, encoding, delimitador), item)
         return True, linhas
     except Exception as e:
         print(f"      ⚠️  Leitura direta falhou: {str(e)[:200]}")
@@ -251,7 +278,7 @@ def converter(con, arquivos: list[Path], item: ItemTrabalho) -> tuple[bool, int]
             return False, 0
 
     try:
-        linhas = _copiar(con, _opcoes_leitura(arquivos, "utf-8"), item)
+        linhas = _copiar(con, _opcoes_leitura(arquivos, "utf-8", delimitador), item)
         return True, linhas
     except Exception as e:
         print(f"      ❌ Conversão falhou definitivamente: {str(e)[:300]}")

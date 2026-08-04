@@ -41,15 +41,25 @@ def _caminho_log_mais_recente() -> Path | None:
     return arquivos[-1] if arquivos else None
 
 
-def _montar_comando(dataset: list[str], ano_inicio: int) -> list[str]:
-    return [
+def _montar_comando(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
+                    tabelas: list[str] | None = None, forcar: bool = False) -> list[str]:
+    comando = [
         sys.executable, "-m", "extracao_ftp.run_extracao",
         "--dataset", *dataset,
         "--ano-inicio", str(ano_inicio),
     ]
+    if ano_fim is not None:
+        comando += ["--ano-fim", str(ano_fim)]
+    if tabelas:
+        comando += ["--tabela", *tabelas]
+    if forcar:
+        comando.append("--forcar")
+    return comando
 
 
-def iniciar(dataset: list[str], ano_inicio: int) -> dict:
+def iniciar(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
+           tabelas: list[str] | None = None, forcar: bool = False,
+           rotulo: str = "extracao") -> dict:
     """Sobe o subprocesso de extração. Recusa se já houver um rodando."""
     global _processo, _comando, _caminho_log, _iniciado_em, _finalizado_em, _codigo_saida
 
@@ -58,10 +68,10 @@ def iniciar(dataset: list[str], ano_inicio: int) -> dict:
             return {"ok": False, "erro": "Já existe uma extração em andamento."}
 
         DIR_LOGS_EXECUCOES.mkdir(parents=True, exist_ok=True)
-        comando = _montar_comando(dataset, ano_inicio)
+        comando = _montar_comando(dataset, ano_inicio, ano_fim, tabelas, forcar)
 
         carimbo = datetime.now().strftime("%Y%m%d_%H%M%S")
-        caminho_log = DIR_LOGS_EXECUCOES / f"{carimbo}_{'-'.join(dataset)}.log"
+        caminho_log = DIR_LOGS_EXECUCOES / f"{carimbo}_{rotulo}.log"
 
         ambiente = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
         log = open(caminho_log, "w", encoding="utf-8", errors="replace")

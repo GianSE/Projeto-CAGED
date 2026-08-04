@@ -35,6 +35,24 @@ quatro formatos, dependendo da fonte:
      1-6,9 no Novo CAGED. Por isso não dá para reaproveitar o dicionário do
      Novo CAGED nessas colunas.
 
+  5. "titulo_codigo" — RAIS (bronze/dicionarios/rais_layouts/*): descrição
+     numa coluna, código em outra, com a linha de título da lista (sem
+     código, só o nome do campo) descartada automaticamente por não ter
+     valor na coluna de código:
+
+         col_00                              col_02
+         "grau de instrução após 2005"       NULL   <- título, cai fora
+         "ANALFABETO"                        "1"
+         "ATE 5.A INC"                       "2"
+
+     Uma variante do mesmo formato ("faixas") empilha DOIS desses pares lado
+     a lado na mesma aba (col_00/col_01 = faixa etária, col_02/col_03 =
+     faixa de remuneração) — por isso as colunas de descrição/código são
+     parâmetros, não fixas.
+
+Apesar do nome do módulo (herdado do CAGED, que foi construído primeiro), o
+motor aqui é genérico — silver_rais importa e reusa as mesmas funções.
+
 Este módulo cria, dentro de uma conexão DuckDB já aberta, uma VIEW temporária
 por dicionário com colunas (codigo VARCHAR, descricao VARCHAR) — pronta para
 LEFT JOIN na construção da silver.
@@ -139,6 +157,17 @@ def _sql_cagestid(caminho: str, campo: str) -> str:
     """
 
 
+def _sql_titulo_codigo(caminho: str, col_desc: str = "col_00", col_cod: str = "col_01") -> str:
+    # A linha de título não tem valor na coluna de código -> IS NOT NULL a descarta sozinha.
+    return f"""
+        SELECT DISTINCT
+            trim("{col_cod}") AS codigo,
+            trim("{col_desc}") AS descricao
+        FROM read_parquet('{caminho}')
+        WHERE "{col_cod}" IS NOT NULL AND "{col_desc}" IS NOT NULL
+    """
+
+
 def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str, **kwargs) -> bool:
     """
     Cria (ou substitui) uma VIEW temporária (codigo, descricao) no DuckDB.
@@ -156,6 +185,8 @@ def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str, **kwa
         sql = _sql_colon(caminho, kwargs["coluna"])
     elif estilo == "cagestid":
         sql = _sql_cagestid(caminho, kwargs["campo"])
+    elif estilo == "titulo_codigo":
+        sql = _sql_titulo_codigo(caminho, kwargs.get("col_desc", "col_00"), kwargs.get("col_cod", "col_01"))
     else:
         raise ValueError(f"estilo de dicionário desconhecido: {estilo}")
 

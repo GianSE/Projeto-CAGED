@@ -36,6 +36,17 @@ REFRESH_SEGUNDOS = 5
 PREFIXOS_BRONZE_ESPECIAIS = {"_layouts", "dicionarios"}
 LINHAS_ATIVIDADE_RECENTE = 25
 
+# De qual raiz do FTP cada tabela vem — usado só para saber que --dataset
+# passar numa retentativa filtrada por --tabela (ver catalogo.py: RAIZES).
+# O manifesto guarda a tabela de destino (caged_mov, rais_vinc, ...), não o
+# dataset de origem, então esse mapa reconstrói o que falta.
+TABELA_PARA_DATASET = {
+    "caged_mov": "novo_caged", "caged_for": "novo_caged", "caged_exc": "novo_caged",
+    "caged_old": "caged",
+    "caged_ajustes": "caged_ajustes",
+    "rais_estab": "rais", "rais_vinc": "rais",
+}
+
 app = Flask(__name__)
 
 _cache_lock = threading.Lock()
@@ -173,13 +184,47 @@ def api_iniciar():
     if dataset_invalido:
         return jsonify({"ok": False, "erro": f"dataset inválido: {dataset_invalido}"}), 400
 
-    resultado = processos.iniciar(dataset, ano_inicio)
+    resultado = processos.iniciar(dataset, ano_inicio, rotulo="-".join(dataset))
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 
 
 @app.route("/api/extracao/parar", methods=["POST"])
 def api_parar():
     resultado = processos.parar()
+    return jsonify(resultado), (200 if resultado["ok"] else 409)
+
+
+@app.route("/api/erros/retentar", methods=["POST"])
+def api_retentar_erros():
+    """
+    Relança a extração filtrada só pelas tabelas/anos que hoje têm erro no
+    manifesto. Não precisa de --forcar: um item que falhou nunca chegou a
+    gravar no bronze, então o EstadoLake do run_extracao já o trata como
+    pendente e vai reprocessar exatamente ele (e só ele, dentro do recorte).
+    """
+    erros = _ler_manifesto()["erros"]
+    if not erros:
+        return jsonify({"ok": False, "erro": "Nenhum erro registrado para retentar."}), 400
+
+    tabelas = sorted({e["tabela"] for e in erros if e.get("tabela")})
+    datasets_desconhecidos = [t for t in tabelas if t not in TABELA_PARA_DATASET]
+    if datasets_desconhecidos:
+        return jsonify({
+            "ok": False,
+            "erro": f"Tabela sem dataset conhecido: {datasets_desconhecidos}. "
+                    f"Atualize TABELA_PARA_DATASET em painel/app.py.",
+        }), 500
+
+    dataset = sorted({TABELA_PARA_DATASET[t] for t in tabelas})
+    anos = [int(e["ano"]) for e in erros if e.get("ano")]
+    ano_inicio, ano_fim = (min(anos), max(anos)) if anos else (1985, 2030)
+
+    resultado = processos.iniciar(
+        dataset, ano_inicio, ano_fim=ano_fim, tabelas=tabelas, rotulo="retentar-erros",
+    )
+    if resultado["ok"]:
+        resultado["itens_visados"] = len(erros)
+        resultado["tabelas"] = tabelas
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 
 

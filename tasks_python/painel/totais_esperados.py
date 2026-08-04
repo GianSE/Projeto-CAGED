@@ -17,7 +17,6 @@ TOTAIS_BRONZE = {
     "caged_for": 77,
     "caged_mov": 78,
     "caged_old": 156,
-    # RAIS ainda não extraída — preencher quando a carga começar:
-    # "rais_estab": ...,
-    # "rais_vinc": ...,
+    "rais_estab": 41,
+    "rais_vinc": 950,
 }
