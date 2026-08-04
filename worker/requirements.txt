@@ -1,10 +1,16 @@
 duckdb
-sqlalchemy
-mariadb
 polars
-python-dotenv
 pyarrow
+python-dotenv
 s3fs
-adlfs
 boto3
+adlfs
 py7zr
+# Leitura das planilhas de layout/dicionário do MTE (.xls antigo e .xlsx)
+pandas
+openpyxl
+xlrd
+# Alguns ".xls" do MTE são HTML disfarçado; o fallback pd.read_html precisa do lxml
+lxml
+# Painel web de observabilidade da extração (tasks_python/painel)
+flask

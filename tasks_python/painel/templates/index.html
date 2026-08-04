@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel CAGED / RAIS</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --plane:          #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --seq-100: #cde2fb; --seq-300: #6da7ec; --seq-450: #2a78d6; --seq-600: #184f95;
+    --good:     #0ca30c;
+    --warning:  #fab219;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --plane:          #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+      --seq-100: #184f95; --seq-300: #2a78d6; --seq-450: #3987e5; --seq-600: #6da7ec;
+      --good:     #0ca30c;
+      --warning:  #fab219;
+      --critical: #e66767;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--plane);
+    color: var(--text-primary);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--border);
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .pill-good { color: var(--good); } .pill-good .dot { background: var(--good); }
+  .pill-critical { color: var(--critical); } .pill-critical .dot { background: var(--critical); }
+  .pill-muted { color: var(--text-muted); } .pill-muted .dot { background: var(--text-muted); }
+
+  a.link { color: var(--seq-450); text-decoration: none; font-size: 13px; }
+  a.link:hover { text-decoration: underline; }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px;
+  }
+
+  .heartbeat { margin-bottom: 20px; display: flex; align-items: center; gap: 14px; }
+  .heartbeat .pulse {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--seq-450); flex: none;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .heartbeat.ocioso .pulse { background: var(--text-muted); animation: none; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .heartbeat .txt-title { font-weight: 600; font-size: 14px; }
+  .heartbeat .txt-sub { color: var(--text-secondary); font-size: 12.5px; margin-top: 2px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-label { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+
+  h2 { font-size: 14px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; margin: 28px 0 12px; }
+
+  .tabelas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .tabela-card .nome { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+  .barra-track { height: 8px; border-radius: 4px; background: var(--gridline); overflow: hidden; margin: 6px 0; }
+  .barra-fill { height: 100%; background: linear-gradient(90deg, var(--seq-300), var(--seq-450)); border-radius: 4px; transition: width .4s ease; }
+  .contagem { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .silver-linha { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline); display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; }
+
+  table.atividade { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.atividade th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; padding: 6px 10px; border-bottom: 1px solid var(--gridline); }
+  table.atividade td { padding: 7px 10px; border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums; }
+  table.atividade tr:last-child td { border-bottom: none; }
+  .num { text-align: right; }
+  .status-ok { color: var(--good); font-weight: 600; }
+  .status-erro { color: var(--critical); font-weight: 600; }
+
+  .vazio { color: var(--text-muted); font-size: 13px; padding: 12px 2px; }
+  .contagem-titulo { color: var(--critical); font-weight: 700; text-transform: none; letter-spacing: 0; }
+  .erros-scroll { max-height: 340px; overflow-y: auto; }
+
+  .link-botao { background: none; border: none; color: var(--seq-450); font-size: 12.5px; cursor: pointer; padding: 0; }
+  .link-botao:hover { text-decoration: underline; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 50; padding: 24px;
+  }
+  .modal-caixa {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; width: 100%; max-width: 860px; max-height: 84vh; display: flex; flex-direction: column; gap: 10px;
+  }
+  .modal-topo { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 13px; }
+
+  .controles { margin-bottom: 20px; }
+  .controles-topo { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .controles-opcoes { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+  .chk input[type="checkbox"] { accent-color: var(--seq-450); }
+  .chk.ano { gap: 8px; }
+  .chk.ano input[type="number"] {
+    width: 72px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--plane); color: var(--text-primary); font-size: 13px;
+  }
+  .controles-botoes { display: flex; gap: 8px; flex: none; }
+  .botao {
+    border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: opacity .15s ease;
+  }
+  .botao:hover { opacity: .88; }
+  .botao:disabled { opacity: .45; cursor: not-allowed; }
+  .botao-play { background: var(--good); color: #ffffff; }
+  .botao-stop { background: var(--critical); color: #ffffff; }
+  .processo-status { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); min-height: 18px; }
+  .log-tail {
+    margin-top: 10px; max-height: 220px; overflow-y: auto; background: var(--plane);
+    border: 1px solid var(--gridline); border-radius: 8px; padding: 10px 12px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 11.5px;
+    color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Painel CAGED / RAIS</h1>
+      <div class="sub">Extração FTP → MinIO — bronze / silver</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <span id="pill-minio" class="pill pill-muted"><span class="dot"></span>verificando…</span>
+      <a class="link" href="http://localhost:9001" target="_blank" rel="noopener">Console MinIO ↗</a>
+    </div>
+  </header>
+
+  <div id="heartbeat" class="card heartbeat ocioso">
+    <div class="pulse"></div>
+    <div>
+      <div class="txt-title" id="hb-titulo">Carregando…</div>
+      <div class="txt-sub" id="hb-sub"></div>
+    </div>
+  </div>
+
+  <div class="card controles">
+    <div class="controles-topo">
+      <div class="controles-opcoes" id="controles-opcoes">
+        <label class="chk"><input type="checkbox" value="novo_caged" checked> Novo CAGED</label>
+        <label class="chk"><input type="checkbox" value="caged" checked> CAGED antigo</label>
+        <label class="chk"><input type="checkbox" value="caged_ajustes" checked> Ajustes</label>
+        <label class="chk"><input type="checkbox" value="rais"> RAIS</label>
+        <label class="chk ano">Ano início
+          <input type="number" id="ano-inicio" value="1985" min="1985" max="2030" step="1">
+        </label>
+      </div>
+      <div class="controles-botoes">
+        <button id="btn-play" class="botao botao-play">▶ Iniciar extração</button>
+        <button id="btn-stop" class="botao botao-stop" style="display:none;">⏹ Parar</button>
+      </div>
+    </div>
+    <div id="processo-status" class="processo-status"></div>
+    <pre id="log-tail" class="log-tail" style="display:none;"></pre>
+  </div>
+
+  <div class="stats-row">
+    <div class="card"><div class="stat-value" id="st-ok">–</div><div class="stat-label">Itens ok</div></div>
+    <div class="card"><div class="stat-value" id="st-erro">–</div><div class="stat-label">Itens com erro</div></div>
+    <div class="card"><div class="stat-value" id="st-total">–</div><div class="stat-label">Total processado</div></div>
+  </div>
+
+  <h2>Tabelas</h2>
+  <div id="tabelas" class="tabelas-grid"></div>
+
+  <h2>Erros registrados <span id="erros-contagem" class="contagem-titulo"></span></h2>
+  <div class="card" style="padding:0;">
+    <div class="erros-scroll">
+      <table class="atividade">
+        <thead>
+          <tr><th>Hora</th><th>Tabela</th><th>Competência</th><th>Arquivo</th><th>Motivo</th></tr>
+        </thead>
+        <tbody id="erros-body"></tbody>
+      </table>
+    </div>
+    <div id="erros-vazio" class="vazio" style="display:none;">Nenhum erro registrado. 🎉</div>
+  </div>
+
+  <h2>Atividade recente</h2>
+  <div class="card" style="padding:0;">
+    <table class="atividade">
+      <thead>
+        <tr><th>Hora</th><th>Tabela</th><th>Competência</th><th class="num">Linhas</th><th class="num">Segundos</th><th>Status</th></tr>
+      </thead>
+      <tbody id="atividade-body"></tbody>
+    </table>
+    <div id="atividade-vazio" class="vazio" style="display:none;">Nenhuma atividade registrada ainda.</div>
+  </div>
+
+  <h2>Execuções anteriores</h2>
+  <div class="card" style="padding:0;">
+    <table class="atividade">
+      <thead><tr><th>Arquivo de log</th><th class="num">Tamanho</th><th></th></tr></thead>
+      <tbody id="execucoes-body"></tbody>
+    </table>
+    <div id="execucoes-vazio" class="vazio" style="display:none;">Nenhuma execução registrada ainda.</div>
+  </div>
+</div>
+
+<div id="modal-log" class="modal-overlay" style="display:none;">
+  <div class="modal-caixa">
+    <div class="modal-topo">
+      <span id="modal-titulo"></span>
+      <button id="modal-fechar" class="botao" style="background:var(--gridline); color:var(--text-primary);">Fechar</button>
+    </div>
+    <pre id="modal-conteudo" class="log-tail" style="max-height:70vh;"></pre>
+  </div>
+</div>
+
+<script>
+const REFRESH_MS = {{ refresh_ms }};
+
+function fmt(n) { return n === null || n === undefined ? '–' : n.toLocaleString('pt-BR'); }
+
+function atualizarHeartbeat(hb) {
+  const box = document.getElementById('heartbeat');
+  const titulo = document.getElementById('hb-titulo');
+  const sub = document.getElementById('hb-sub');
+  const ETAPAS = { baixando: 'Baixando do FTP', descompactando: 'Descompactando', gravando: 'Gravando no MinIO' };
+
+  if (!hb) {
+    box.classList.add('ocioso');
+    titulo.textContent = 'Ocioso — nenhuma extração rodando';
+    sub.textContent = '';
+    return;
+  }
+  box.classList.remove('ocioso');
+  titulo.textContent = `[${hb.indice}/${hb.total}] ${hb.rotulo}  (${hb.tamanho_mb} MB)`;
+  const etapa = ETAPAS[hb.etapa] || hb.etapa;
+  sub.textContent = `${etapa} · atualizado há ${Math.round(hb.idade_segundos)}s`;
+}
+
+function atualizarMinio(minio) {
+  const pill = document.getElementById('pill-minio');
+  if (minio && minio.ok) {
+    pill.className = 'pill pill-good';
+    pill.innerHTML = '<span class="dot"></span>MinIO conectado';
+  } else {
+    pill.className = 'pill pill-critical';
+    pill.innerHTML = '<span class="dot"></span>MinIO indisponível';
+  }
+}
+
+function atualizarTabelas(tabelas) {
+  const container = document.getElementById('tabelas');
+  container.innerHTML = '';
+  if (!tabelas || !tabelas.length) {
+    container.innerHTML = '<div class="vazio">Nenhuma tabela encontrada ainda.</div>';
+    return;
+  }
+  for (const t of tabelas) {
+    const pct = t.pct_bronze === null || t.pct_bronze === undefined ? null : t.pct_bronze;
+    const div = document.createElement('div');
+    div.className = 'card tabela-card';
+    div.innerHTML = `
+      <div class="nome">${t.tabela}</div>
+      <div class="barra-track"><div class="barra-fill" style="width:${pct ?? (t.bronze > 0 ? 100 : 0)}%"></div></div>
+      <div class="contagem">
+        <span>${fmt(t.bronze)}${t.bronze_esperado ? ' / ' + fmt(t.bronze_esperado) : ''} arquivo(s)</span>
+        <span>${pct !== null ? pct + '%' : ''}</span>
+      </div>
+      <div class="silver-linha">
+        <span style="color:var(--text-secondary)">Silver</span>
+        <span style="color:${t.tem_silver ? 'var(--good)' : 'var(--text-muted)'}; font-weight:600;">
+          ${t.tem_silver ? fmt(t.silver) + ' arquivo(s)' : 'pendente'}
+        </span>
+      </div>`;
+    container.appendChild(div);
+  }
+}
+
+function atualizarErros(manifesto) {
+  const contagem = document.getElementById('erros-contagem');
+  const body = document.getElementById('erros-body');
+  const vazio = document.getElementById('erros-vazio');
+  const erros = manifesto.erros || [];
+
+  contagem.textContent = erros.length ? `(${erros.length})` : '';
+  body.innerHTML = '';
+
+  if (!erros.length) {
+    vazio.style.display = 'block';
+    return;
+  }
+  vazio.style.display = 'none';
+
+  for (const row of erros) {
+    const hora = (row.data_hora || '').replace('T', ' ').slice(0, 19);
+    const competencia = [row.ano, row.mes].filter(Boolean).join('/') + (row.recorte ? ' ' + row.recorte : '');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${hora}</td>
+      <td>${row.tabela || ''}</td>
+      <td>${competencia}</td>
+      <td>${row.arquivo_fonte || ''}</td>
+      <td class="status-erro">${row.observacao || 'erro'}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+function atualizarExecucoes(execucoes) {
+  const body = document.getElementById('execucoes-body');
+  const vazio = document.getElementById('execucoes-vazio');
+  body.innerHTML = '';
+
+  if (!execucoes || !execucoes.length) {
+    vazio.style.display = 'block';
+    return;
+  }
+  vazio.style.display = 'none';
+
+  for (const exec of execucoes) {
+    const tr = document.createElement('tr');
+    const dataMod = new Date(exec.modificado_em * 1000).toLocaleString('pt-BR');
+    tr.innerHTML = `
+      <td>${exec.nome}<br><span style="color:var(--text-muted); font-size:11px;">${dataMod}</span></td>
+      <td class="num">${exec.tamanho_kb} KB</td>
+      <td><button class="link-botao" data-log="${exec.nome}">ver log completo</button></td>`;
+    body.appendChild(tr);
+  }
+  body.querySelectorAll('button[data-log]').forEach(btn => {
+    btn.addEventListener('click', () => abrirLog(btn.dataset.log));
+  });
+}
+
+async function abrirLog(nome) {
+  const resp = await fetch(`/api/execucoes/${encodeURIComponent(nome)}`);
+  const dados = await resp.json();
+  document.getElementById('modal-titulo').textContent = nome;
+  document.getElementById('modal-conteudo').textContent = dados.ok ? dados.conteudo : (dados.erro || 'Falha ao carregar.');
+  document.getElementById('modal-log').style.display = 'flex';
+}
+document.getElementById('modal-fechar').addEventListener('click', () => {
+  document.getElementById('modal-log').style.display = 'none';
+});
+document.getElementById('modal-log').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-log') e.currentTarget.style.display = 'none';
+});
+
+async function atualizarListaExecucoes() {
+  try {
+    const resp = await fetch('/api/execucoes');
+    atualizarExecucoes(await resp.json());
+  } catch (e) { /* silencioso: não é crítico para o painel funcionar */ }
+}
+
+function atualizarAtividade(manifesto) {
+  document.getElementById('st-ok').textContent = fmt(manifesto.ok);
+  document.getElementById('st-erro').textContent = fmt(manifesto.erro);
+  document.getElementById('st-total').textContent = fmt(manifesto.total);
+  atualizarErros(manifesto);
+
+  const body = document.getElementById('atividade-body');
+  const vazio = document.getElementById('atividade-vazio');
+  body.innerHTML = '';
+
+  if (!manifesto.recentes || !manifesto.recentes.length) {
+    vazio.style.display = 'block';
+    return;
+  }
+  vazio.style.display = 'none';
+
+  for (const row of manifesto.recentes) {
+    const hora = (row.data_hora || '').replace('T', ' ').slice(0, 19);
+    const competencia = [row.ano, row.mes].filter(Boolean).join('/') + (row.recorte ? ' ' + row.recorte : '');
+    const statusClasse = row.status === 'ok' ? 'status-ok' : 'status-erro';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${hora}</td>
+      <td>${row.tabela || ''}</td>
+      <td>${competencia}</td>
+      <td class="num">${row.linhas ? Number(row.linhas).toLocaleString('pt-BR') : '–'}</td>
+      <td class="num">${row.segundos || '–'}</td>
+      <td class="${statusClasse}">${row.status === 'ok' ? 'ok' : ('erro' + (row.observacao ? ' — ' + row.observacao : ''))}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+function atualizarProcesso(proc) {
+  const btnPlay = document.getElementById('btn-play');
+  const btnStop = document.getElementById('btn-stop');
+  const statusTxt = document.getElementById('processo-status');
+  const opcoes = document.getElementById('controles-opcoes');
+  const logBox = document.getElementById('log-tail');
+
+  if (!proc) return;
+
+  if (proc.rodando) {
+    btnPlay.style.display = 'none';
+    btnStop.style.display = 'inline-block';
+    opcoes.querySelectorAll('input').forEach(el => el.disabled = true);
+    const decorrido = Math.round((Date.now() / 1000) - proc.iniciado_em);
+    statusTxt.innerHTML = `<span style="color:var(--good); font-weight:600;">● rodando</span> — PID ${proc.pid} · há ${decorrido}s`;
+  } else {
+    btnPlay.style.display = 'inline-block';
+    btnStop.style.display = 'none';
+    opcoes.querySelectorAll('input').forEach(el => el.disabled = false);
+    if (proc.codigo_saida === null || proc.codigo_saida === undefined) {
+      statusTxt.textContent = 'Nenhuma extração rodando.';
+    } else if (proc.codigo_saida === 0) {
+      statusTxt.innerHTML = '<span style="color:var(--good); font-weight:600;">✓ última execução concluída sem erros</span>';
+    } else {
+      statusTxt.innerHTML = `<span style="color:var(--critical); font-weight:600;">✗ última execução terminou com código ${proc.codigo_saida}</span>`;
+    }
+  }
+
+  if (proc.log_tail && proc.log_tail.length) {
+    logBox.style.display = 'block';
+    logBox.textContent = proc.log_tail.join('\n');
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+}
+
+async function iniciarExtracao() {
+  const dataset = Array.from(document.querySelectorAll('#controles-opcoes input[type=checkbox]:checked')).map(el => el.value);
+  const anoInicio = parseInt(document.getElementById('ano-inicio').value, 10) || 1985;
+  if (!dataset.length) { alert('Selecione ao menos um conjunto de dados.'); return; }
+
+  const resp = await fetch('/api/extracao/iniciar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dataset, ano_inicio: anoInicio }),
+  });
+  const dados = await resp.json();
+  if (!dados.ok) alert(dados.erro || 'Não foi possível iniciar.');
+  atualizar();
+}
+
+async function pararExtracao() {
+  if (!confirm('Parar a extração em andamento?')) return;
+  const resp = await fetch('/api/extracao/parar', { method: 'POST' });
+  const dados = await resp.json();
+  if (!dados.ok) alert(dados.erro || 'Não foi possível parar.');
+  atualizar();
+}
+
+document.getElementById('btn-play').addEventListener('click', iniciarExtracao);
+document.getElementById('btn-stop').addEventListener('click', pararExtracao);
+
+async function atualizar() {
+  try {
+    const resp = await fetch('/api/status');
+    const dados = await resp.json();
+    if (!dados.pronto) return;
+    atualizarMinio(dados.minio);
+    atualizarHeartbeat(dados.heartbeat);
+    atualizarTabelas(dados.tabelas);
+    atualizarAtividade(dados.manifesto);
+    atualizarProcesso(dados.processo);
+    atualizarListaExecucoes();
+  } catch (e) {
+    document.getElementById('pill-minio').className = 'pill pill-critical';
+    document.getElementById('pill-minio').innerHTML = '<span class="dot"></span>Painel sem conexão com o backend';
+  }
+}
+
+atualizar();
+setInterval(atualizar, REFRESH_MS);
+</script>
+</body>
+</html>

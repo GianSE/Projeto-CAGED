@@ -1,5 +1,7 @@
 .env
 .env.worker
+.venv
+venv
 dev.duckdb
 dev.duckdb.wal
 __pycache__
