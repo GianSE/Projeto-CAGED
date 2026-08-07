@@ -42,9 +42,17 @@ SUPERFICIE = "#fcfcfb"
 FONTE = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
 
-def layout_base(altura=340, mostrar_legenda=True):
-    """Layout comum: grade discreta, sem moldura, tipografia do sistema."""
-    return dict(
+def layout_base(altura=340, mostrar_legenda=True, hover_unificado=False):
+    """
+    Layout comum: grade discreta, sem moldura, tipografia do sistema.
+
+    `hover_unificado` liga a leitura em conjunto para séries temporais: uma
+    linha-guia vertical segue o cursor e o tooltip traz TODAS as séries
+    daquele instante de uma vez. Sem isso, comparar admissões e desligamentos
+    exigiria passar o mouse em cada curva separadamente e guardar o número de
+    cabeça — justamente a comparação que o gráfico existe para permitir.
+    """
+    layout = dict(
         height=altura,
         margin=dict(l=8, r=8, t=28, b=8),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -55,8 +63,20 @@ def layout_base(altura=340, mostrar_legenda=True):
         showlegend=mostrar_legenda,
         legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="left", x=0,
                     font=dict(size=11)),
-        hoverlabel=dict(font=dict(family=FONTE, size=12)),
+        hoverlabel=dict(font=dict(family=FONTE, size=12),
+                        bgcolor=SUPERFICIE, bordercolor=GRID),
     )
+
+    if hover_unificado:
+        layout["hovermode"] = "x unified"
+        # A linha-guia mostra exatamente qual ponto do eixo está sendo lido —
+        # com duas curvas próximas, sem ela a leitura fica ambígua.
+        layout["xaxis"].update(
+            showspikes=True, spikemode="across", spikesnap="cursor",
+            spikecolor=MUTED, spikethickness=1, spikedash="dot",
+        )
+
+    return layout
 
 
 def fmt_num(n) -> str:

@@ -127,10 +127,11 @@ with aba_hist:
         st.subheader("O salário nunca recuou")
         f2 = go.Figure(go.Scatter(
             x=por_ano["ano"], y=por_ano["salario_medio"], mode="lines+markers",
+            name="Salário médio",
             line=dict(color=tema.SERIE_3, width=2), marker=dict(size=6),
-            hovertemplate="%{x}<br>R$ %{y:,.2f}<extra></extra>",
+            hovertemplate="R$ %{y:,.2f}<extra>Salário médio</extra>",
         ))
-        lay = tema.layout_base(altura=280, mostrar_legenda=False)
+        lay = tema.layout_base(altura=280, mostrar_legenda=False, hover_unificado=True)
         lay["yaxis"]["title"] = "R$ na admissão"
         f2.update_layout(**lay)
         st.plotly_chart(f2, width="stretch")
@@ -140,14 +141,23 @@ with aba_hist:
         mensal = dados.serie_longa_mensal()
         if not mensal.empty:
             f3 = go.Figure()
+            # No modo unificado a data vem no cabeçalho do tooltip, então cada
+            # série mostra só o próprio valor — repetir a data em cada linha
+            # poluiria a leitura.
             f3.add_scatter(x=mensal["competencia"], y=mensal["admissoes"], mode="lines",
                            name="Admissões", line=dict(color=tema.COR_ADMISSAO, width=1.6),
-                           hovertemplate="%{x|%b/%Y}<br>Admissões: %{y:,.0f}<extra></extra>")
+                           hovertemplate="%{y:,.0f}<extra>Admissões</extra>")
             f3.add_scatter(x=mensal["competencia"], y=mensal["desligamentos"], mode="lines",
                            name="Desligamentos",
                            line=dict(color=tema.COR_DESLIGAMENTO, width=1.6),
-                           hovertemplate="%{x|%b/%Y}<br>Desligamentos: %{y:,.0f}<extra></extra>")
-            f3.update_layout(**tema.layout_base(altura=320))
+                           hovertemplate="%{y:,.0f}<extra>Desligamentos</extra>")
+            # O saldo entra como série invisível só para aparecer no tooltip:
+            # é a diferença entre as duas curvas, e tê-la junto evita a
+            # subtração mental a cada ponto.
+            f3.add_scatter(x=mensal["competencia"], y=mensal["saldo"], mode="lines",
+                           name="Saldo", line=dict(width=0), showlegend=False,
+                           hovertemplate="%{y:+,.0f}<extra>Saldo</extra>")
+            f3.update_layout(**tema.layout_base(altura=320, hover_unificado=True))
             st.plotly_chart(f3, width="stretch")
             leitura("As duas curvas andam quase coladas — o mercado de TI tem "
                     "rotatividade alta. O saldo é a distância entre elas, e é por isso "
