@@ -144,7 +144,10 @@ def main() -> int:
     from dotenv import load_dotenv
 
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-    token = os.getenv("HF_TOKEN")  # None faz o HfApi cair no login do CLI
+    # `HF_TOKEN=` (vazio, como fica no .env antes de você colar o token) daria
+    # string vazia — que o HfApi trataria como credencial e ignoraria o login
+    # do CLI. Normaliza para None, que é o que faz ele usar o login guardado.
+    token = os.getenv("HF_TOKEN") or None
 
     if not token and not _tem_login_cli():
         print("❌ Nenhuma credencial do Hugging Face encontrada. Use uma destas:")
