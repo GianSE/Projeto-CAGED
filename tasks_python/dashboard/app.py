@@ -1,13 +1,12 @@
 """
-Dashboard do mercado de trabalho formal brasileiro (CAGED).
+Dashboard do mercado de trabalho em TECNOLOGIA (CAGED).
 
-Lê a camada gold (agregados) via DuckDB. Rodar com:
+DuckDB lê a camada silver direto — ela já vem recortada em tecnologia
+(~4,5 milhões de movimentações), então não há camada gold no caminho; as
+agregações ficam em dados.py, cacheadas pelo Streamlit.
 
-    cd tasks_python
+Rodar (a partir de tasks_python):
     ..\\.venv\\Scripts\\streamlit run dashboard/app.py
-
-Pré-requisito: a gold precisa existir.
-    python -m gold_caged.construir_gold
 """
 import plotly.graph_objects as go
 import streamlit as st
@@ -15,245 +14,265 @@ import streamlit as st
 from dashboard import dados, tema
 from dashboard.tema import fmt_compacto, fmt_num, fmt_reais
 
-st.set_page_config(page_title="Mercado de Trabalho — CAGED", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Mercado de Trabalho em TI — CAGED",
+                   page_icon="💻", layout="wide")
 
 st.markdown(f"""
 <style>
   .block-container {{ padding-top: 2.2rem; max-width: 1400px; }}
-  [data-testid="stMetricValue"] {{ font-size: 1.9rem; font-family: {tema.FONTE}; }}
+  [data-testid="stMetricValue"] {{ font-size: 1.8rem; font-family: {tema.FONTE}; }}
   [data-testid="stMetricLabel"] {{ color: {tema.TEXTO_SEC}; }}
   h1, h2, h3 {{ font-family: {tema.FONTE}; }}
-  .rodape {{ color: {tema.MUTED}; font-size: 12px; margin-top: 8px; }}
+  .rodape {{ color: {tema.MUTED}; font-size: 12px; margin-top: 10px; line-height: 1.6; }}
 </style>
 """, unsafe_allow_html=True)
 
+st.title("💻 Mercado de Trabalho em Tecnologia")
+st.caption("Novo CAGED (2020+) · recorte: setor de TI (CNAE) **ou** ocupação de TI (CBO) · "
+           "saldo = admissões − desligamentos")
 
-# --------------------------------------------------------------- carregamento
-disponiveis = dados.agregados_disponiveis()
-if not any(disponiveis.values()):
-    st.title("📊 Mercado de Trabalho — CAGED")
-    st.warning(
-        "A camada **gold** ainda não foi construída.\n\n"
-        "Rode `python -m gold_caged.construir_gold` (a partir de `tasks_python`) "
-        "depois que a silver estiver pronta."
-    )
+if not dados.tem_dados():
+    st.warning("A silver de `caged_mov` ainda não tem dados. "
+               "Rode `python -m silver_caged.construir_silver --tabela caged_mov`.")
     st.stop()
 
-mensal = dados.carregar("saldo_mensal")
-por_uf = dados.carregar("saldo_uf")
-por_setor = dados.carregar("saldo_setor")
-perfil = dados.carregar("perfil_demografico")
-ocupacoes = dados.carregar("ocupacoes")
+mensal = dados.mensal()
+por_uf = dados.mensal_por_uf()
 
-st.title("📊 Mercado de Trabalho Formal — CAGED")
-st.caption("Novo CAGED (2020+) · saldo = admissões − desligamentos · fonte: microdados do MTE")
-
-# ------------------------------------------------------------------- filtros
-base_periodo = mensal if not mensal.empty else por_uf
-anos = sorted(base_periodo["competencia"].dt.year.unique()) if not base_periodo.empty else []
-
-col_f1, col_f2 = st.columns([2, 3])
-with col_f1:
+# ------------------------------------------------------------------ filtros
+anos = sorted(mensal["competencia"].dt.year.unique()) if not mensal.empty else []
+c1, c2 = st.columns([2, 3])
+with c1:
     if len(anos) > 1:
-        ano_ini, ano_fim = st.select_slider(
-            "Período", options=anos, value=(anos[0], anos[-1]),
-        )
+        ano_ini, ano_fim = st.select_slider("Período", options=anos, value=(anos[0], anos[-1]))
     else:
         ano_ini = ano_fim = anos[0] if anos else None
-with col_f2:
+with c2:
     ufs = sorted(por_uf["uf"].dropna().unique()) if not por_uf.empty else []
     ufs_sel = st.multiselect("UF (vazio = Brasil)", ufs, default=[])
 
 
-def filtrar_periodo(df, coluna="competencia"):
+def por_periodo(df, coluna="competencia"):
     if df.empty or ano_ini is None:
         return df
-    if coluna == "competencia":
-        anos_df = df[coluna].dt.year
-    else:
-        anos_df = df[coluna]
+    anos_df = df[coluna].dt.year if coluna == "competencia" else df[coluna]
     return df[(anos_df >= ano_ini) & (anos_df <= ano_fim)]
 
 
-# Com UF selecionada, o recorte territorial vale para todo o painel: a série
-# mensal passa a vir de saldo_uf (que tem a dimensão UF) em vez de saldo_mensal,
-# senão os KPIs mostrariam o Brasil enquanto o resto mostraria a seleção.
-uf_ativa = bool(ufs_sel)
-por_uf_f = filtrar_periodo(por_uf)
-if uf_ativa:
-    por_uf_f = por_uf_f[por_uf_f["uf"].isin(ufs_sel)]
-    mensal_f = (por_uf_f.groupby("competencia", as_index=False)
+# Com UF selecionada o recorte territorial vale para o painel inteiro: a série
+# mensal passa a vir de por_uf (que tem a dimensão UF), senão os KPIs mostrariam
+# o Brasil enquanto os gráficos abaixo mostrariam a seleção.
+uf_f = por_periodo(por_uf)
+if ufs_sel:
+    uf_f = uf_f[uf_f["uf"].isin(ufs_sel)]
+    mensal_f = (uf_f.groupby("competencia", as_index=False)
                 .agg(admissoes=("admissoes", "sum"),
                      desligamentos=("desligamentos", "sum"),
                      saldo=("saldo", "sum"),
-                     salario_medio_admissao=("salario_medio_admissao", "mean")))
+                     salario_medio=("salario_medio", "mean"),
+                     idade_media=("idade_media", "mean")))
 else:
-    mensal_f = filtrar_periodo(mensal)
+    mensal_f = por_periodo(mensal)
 
-# ---------------------------------------------------------------------- KPIs
+# --------------------------------------------------------------------- KPIs
 if not mensal_f.empty:
-    tot_adm = int(mensal_f["admissoes"].sum())
-    tot_desl = int(mensal_f["desligamentos"].sum())
+    adm = int(mensal_f["admissoes"].sum())
+    desl = int(mensal_f["desligamentos"].sum())
     saldo = int(mensal_f["saldo"].sum())
-    sal_medio = mensal_f["salario_medio_admissao"].mean()
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Saldo de empregos", fmt_compacto(saldo),
-              delta=f"{saldo / tot_adm * 100:.1f}% das admissões" if tot_adm else None)
-    k2.metric("Admissões", fmt_compacto(tot_adm))
-    k3.metric("Desligamentos", fmt_compacto(tot_desl))
-    k4.metric("Salário médio de admissão", fmt_reais(sal_medio))
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Saldo de empregos em TI", fmt_compacto(saldo))
+    k2.metric("Admissões", fmt_compacto(adm))
+    k3.metric("Desligamentos", fmt_compacto(desl))
+    k4.metric("Salário médio de admissão", fmt_reais(mensal_f["salario_medio"].mean()))
+    k5.metric("Idade média na admissão", f"{mensal_f['idade_media'].mean():.0f} anos")
 
 st.divider()
 
-# ------------------------------------------------- série temporal do saldo
+# ---------------------------------------------------- série temporal
 if not mensal_f.empty:
-    st.subheader("Saldo mensal de empregos")
-
-    fig = go.Figure()
-    # Barra divergente: a cor carrega o SINAL (azul cria vaga, vermelho perde),
-    # que é a leitura mais importante do gráfico. Verde/vermelho seria intuitivo
-    # mas é o par que daltônicos não separam.
-    cores = [tema.POSITIVO if v >= 0 else tema.NEGATIVO for v in mensal_f["saldo"]]
-    fig.add_bar(
-        x=mensal_f["competencia"], y=mensal_f["saldo"], marker_color=cores,
-        name="Saldo",
+    st.subheader("Saldo mensal")
+    # A cor carrega o SINAL do saldo — a leitura mais importante do gráfico.
+    # Verde/vermelho seria o par intuitivo, mas é justamente o que daltônicos
+    # não separam; azul/vermelho preserva a polaridade para todo mundo.
+    fig = go.Figure(go.Bar(
+        x=mensal_f["competencia"], y=mensal_f["saldo"],
+        marker_color=[tema.POSITIVO if v >= 0 else tema.NEGATIVO for v in mensal_f["saldo"]],
         hovertemplate="%{x|%b/%Y}<br>Saldo: %{y:,.0f}<extra></extra>",
-    )
-    layout = tema.layout_base(altura=320, mostrar_legenda=False)
-    layout["yaxis"]["title"] = "vagas (líquido)"
-    fig.update_layout(**layout)
+    ))
+    lay = tema.layout_base(altura=300, mostrar_legenda=False)
+    lay["yaxis"]["title"] = "vagas (líquido)"
+    fig.update_layout(**lay)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Fluxo bruto: duas séries de identidade, dois slots categóricos fixos.
-    st.subheader("Admissões e desligamentos")
-    fig2 = go.Figure()
-    fig2.add_scatter(x=mensal_f["competencia"], y=mensal_f["admissoes"],
-                     mode="lines", name="Admissões",
-                     line=dict(color=tema.COR_ADMISSAO, width=2),
-                     hovertemplate="%{x|%b/%Y}<br>Admissões: %{y:,.0f}<extra></extra>")
-    fig2.add_scatter(x=mensal_f["competencia"], y=mensal_f["desligamentos"],
-                     mode="lines", name="Desligamentos",
-                     line=dict(color=tema.COR_DESLIGAMENTO, width=2),
-                     hovertemplate="%{x|%b/%Y}<br>Desligamentos: %{y:,.0f}<extra></extra>")
-    fig2.update_layout(**tema.layout_base(altura=300))
-    st.plotly_chart(fig2, use_container_width=True)
+    st.subheader("Fluxo bruto e salário de contratação")
+    g1, g2 = st.columns([3, 2])
+
+    with g1:
+        f2 = go.Figure()
+        f2.add_scatter(x=mensal_f["competencia"], y=mensal_f["admissoes"], mode="lines",
+                       name="Admissões", line=dict(color=tema.COR_ADMISSAO, width=2),
+                       hovertemplate="%{x|%b/%Y}<br>Admissões: %{y:,.0f}<extra></extra>")
+        f2.add_scatter(x=mensal_f["competencia"], y=mensal_f["desligamentos"], mode="lines",
+                       name="Desligamentos", line=dict(color=tema.COR_DESLIGAMENTO, width=2),
+                       hovertemplate="%{x|%b/%Y}<br>Desligamentos: %{y:,.0f}<extra></extra>")
+        f2.update_layout(**tema.layout_base(altura=300))
+        st.plotly_chart(f2, use_container_width=True)
+
+    with g2:
+        f3 = go.Figure(go.Scatter(
+            x=mensal_f["competencia"], y=mensal_f["salario_medio"], mode="lines",
+            line=dict(color=tema.SERIE_3, width=2),
+            hovertemplate="%{x|%b/%Y}<br>R$ %{y:,.2f}<extra></extra>",
+        ))
+        lay3 = tema.layout_base(altura=300, mostrar_legenda=False)
+        lay3["yaxis"]["title"] = "R$ na admissão"
+        f3.update_layout(**lay3)
+        st.plotly_chart(f3, use_container_width=True)
 
 st.divider()
 
-# --------------------------------------------------------- UF e setor
+# ------------------------------------------- as duas lentes do recorte
+st.subheader("Onde o trabalho de TI acontece")
+st.caption("O recorte une duas definições: quem trabalha **em empresa de tecnologia** (CNAE) "
+           "e quem exerce **ocupação de tecnologia** (CBO). São populações diferentes.")
+
+lentes = por_periodo(dados.setor_ti_vs_ocupacao_ti(), coluna="ano")
+if not lentes.empty:
+    resumo = (lentes.groupby("categoria", as_index=False)
+              .agg(admissoes=("admissoes", "sum"), saldo=("saldo", "sum"),
+                   salario=("salario_medio", "mean"))
+              .sort_values("admissoes", ascending=True))
+
+    l1, l2 = st.columns([3, 2])
+    with l1:
+        f4 = go.Figure(go.Bar(
+            x=resumo["admissoes"], y=resumo["categoria"], orientation="h",
+            marker_color=[tema.SERIE_1, tema.SERIE_2, tema.SERIE_3][: len(resumo)],
+            customdata=resumo["salario"],
+            hovertemplate="%{y}<br>Admissões: %{x:,.0f}"
+                          "<br>Salário médio: R$ %{customdata:,.2f}<extra></extra>",
+        ))
+        lay4 = tema.layout_base(altura=260, mostrar_legenda=False)
+        lay4["margin"]["l"] = 280
+        f4.update_layout(**lay4)
+        st.plotly_chart(f4, use_container_width=True)
+
+    with l2:
+        prof_ti = resumo[resumo["categoria"].str.startswith("Profissional de TI")]
+        if not prof_ti.empty:
+            total_prof = prof_ti["admissoes"].sum()
+            fora = prof_ti[prof_ti["categoria"].str.contains("fora")]["admissoes"].sum()
+            if total_prof:
+                st.metric("Profissionais de TI contratados fora do setor de TI",
+                          f"{fora / total_prof * 100:.1f}%",
+                          help="Desenvolvedores, analistas e afins contratados por bancos, "
+                               "varejo, indústria, saúde — não por empresas de tecnologia.")
+                st.caption(f"{fmt_num(fora)} de {fmt_num(total_prof)} admissões de "
+                           "profissionais de TI no período.")
+
+    st.markdown("**Setores que mais contratam profissionais de TI**")
+    fora_setor = (lentes[lentes["categoria"].str.contains("fora")]
+                  .groupby("setor_empresa", as_index=False)
+                  .agg(admissoes=("admissoes", "sum"), saldo=("saldo", "sum"),
+                       salario=("salario_medio", "mean"))
+                  .sort_values("admissoes", ascending=False).head(10))
+    if not fora_setor.empty:
+        tabela = fora_setor.copy()
+        tabela["Admissões"] = tabela["admissoes"].map(fmt_num)
+        tabela["Saldo"] = tabela["saldo"].map(fmt_num)
+        tabela["Salário médio"] = tabela["salario"].map(fmt_reais)
+        st.dataframe(tabela[["setor_empresa", "Admissões", "Saldo", "Salário médio"]]
+                     .rename(columns={"setor_empresa": "Setor da empresa"}),
+                     use_container_width=True, hide_index=True)
+
+st.divider()
+
+# ------------------------------------------------------------ UF e ocupações
 col_a, col_b = st.columns(2)
 
 with col_a:
     st.subheader("Saldo por UF")
-    if not por_uf_f.empty:
-        rank = (por_uf_f.groupby("uf", as_index=False)["saldo"].sum()
-                .sort_values("saldo", ascending=True).tail(15))
-        fig3 = go.Figure(go.Bar(
+    if not uf_f.empty:
+        rank = (uf_f.groupby("uf", as_index=False)["saldo"].sum()
+                .sort_values("saldo").tail(15))
+        f5 = go.Figure(go.Bar(
             x=rank["saldo"], y=rank["uf"], orientation="h",
             marker_color=[tema.POSITIVO if v >= 0 else tema.NEGATIVO for v in rank["saldo"]],
             hovertemplate="%{y}<br>Saldo: %{x:,.0f}<extra></extra>",
         ))
-        layout = tema.layout_base(altura=420, mostrar_legenda=False)
-        layout["margin"]["l"] = 130
-        fig3.update_layout(**layout)
-        st.plotly_chart(fig3, use_container_width=True)
+        lay5 = tema.layout_base(altura=420, mostrar_legenda=False)
+        lay5["margin"]["l"] = 130
+        f5.update_layout(**lay5)
+        st.plotly_chart(f5, use_container_width=True)
 
 with col_b:
-    st.subheader("Saldo por setor (seção CNAE)")
-    setor_f = filtrar_periodo(por_setor)
-    if not setor_f.empty:
-        rank_s = (setor_f.groupby("setor", as_index=False)["saldo"].sum()
-                  .sort_values("saldo", ascending=True).tail(15))
-        rank_s["rotulo"] = rank_s["setor"].str.slice(0, 42)
-        fig4 = go.Figure(go.Bar(
-            x=rank_s["saldo"], y=rank_s["rotulo"], orientation="h",
-            marker_color=[tema.POSITIVO if v >= 0 else tema.NEGATIVO for v in rank_s["saldo"]],
-            customdata=rank_s["setor"],
-            hovertemplate="%{customdata}<br>Saldo: %{x:,.0f}<extra></extra>",
+    st.subheader("Ocupações de TI com maior saldo")
+    ocup = por_periodo(dados.por_ocupacao(), coluna="ano")
+    if not ocup.empty:
+        top = (ocup.groupby("ocupacao", as_index=False)
+               .agg(saldo=("saldo", "sum"), admissoes=("admissoes", "sum"),
+                    salario=("salario_medio", "mean"))
+               .sort_values("saldo").tail(15))
+        top["rotulo"] = top["ocupacao"].str.slice(0, 40)
+        f6 = go.Figure(go.Bar(
+            x=top["saldo"], y=top["rotulo"], orientation="h",
+            marker_color=[tema.POSITIVO if v >= 0 else tema.NEGATIVO for v in top["saldo"]],
+            customdata=top[["ocupacao", "salario"]],
+            hovertemplate="%{customdata[0]}<br>Saldo: %{x:,.0f}"
+                          "<br>Salário médio: R$ %{customdata[1]:,.2f}<extra></extra>",
         ))
-        layout = tema.layout_base(altura=420, mostrar_legenda=False)
-        layout["margin"]["l"] = 260
-        fig4.update_layout(**layout)
-        st.plotly_chart(fig4, use_container_width=True)
-    else:
-        st.info("Agregado de setor ainda não construído.")
+        lay6 = tema.layout_base(altura=420, mostrar_legenda=False)
+        lay6["margin"]["l"] = 250
+        f6.update_layout(**lay6)
+        st.plotly_chart(f6, use_container_width=True)
 
 st.divider()
 
 # ------------------------------------------------------------- demografia
-st.subheader("Quem está sendo contratado")
-perfil_f = filtrar_periodo(perfil)
+st.subheader("Quem é contratado em tecnologia")
+demo = por_periodo(dados.demografia(), coluna="ano")
 
-if not perfil_f.empty:
+if not demo.empty:
     d1, d2, d3 = st.columns(3)
 
-    def barra_dimensao(coluna, titulo, container, cor):
-        agg = (perfil_f.groupby(coluna, as_index=False)
-               .agg(admissoes=("admissoes", "sum"),
-                    salario=("salario_medio_admissao", "mean"))
-               .sort_values("admissoes", ascending=True))
+    def barra(coluna, titulo, alvo, cor):
+        agg = (demo.groupby(coluna, as_index=False)
+               .agg(admissoes=("admissoes", "sum"), salario=("salario_medio", "mean"))
+               .sort_values("admissoes"))
         fig = go.Figure(go.Bar(
             x=agg["admissoes"], y=agg[coluna], orientation="h", marker_color=cor,
             customdata=agg["salario"],
             hovertemplate="%{y}<br>Admissões: %{x:,.0f}"
                           "<br>Salário médio: R$ %{customdata:,.2f}<extra></extra>",
         ))
-        layout = tema.layout_base(altura=300, mostrar_legenda=False)
-        layout["margin"]["l"] = 150
-        fig.update_layout(**layout)
-        container.markdown(f"**{titulo}**")
-        container.plotly_chart(fig, use_container_width=True)
+        lay = tema.layout_base(altura=300, mostrar_legenda=False)
+        lay["margin"]["l"] = 160
+        fig.update_layout(**lay)
+        alvo.markdown(f"**{titulo}**")
+        alvo.plotly_chart(fig, use_container_width=True)
 
-    barra_dimensao("sexo", "Por sexo", d1, tema.SERIE_1)
-    barra_dimensao("raca_cor", "Por raça/cor", d2, tema.SERIE_3)
-    barra_dimensao("escolaridade", "Por escolaridade", d3, tema.SERIE_5)
+    barra("sexo", "Por sexo", d1, tema.SERIE_1)
+    barra("raca_cor", "Por raça/cor", d2, tema.SERIE_3)
+    barra("escolaridade", "Por escolaridade", d3, tema.SERIE_5)
 
-    # Salário por escolaridade: aqui o dado é magnitude comparável entre
-    # categorias, e a tabela comunica melhor que um gráfico — números exatos
-    # importam mais que a forma.
+    # Números exatos importam mais que forma aqui: tabela comunica melhor.
     st.markdown("**Salário médio de admissão por escolaridade**")
-    sal_esc = (perfil_f.groupby("escolaridade", as_index=False)
-               .agg(admissoes=("admissoes", "sum"),
-                    salario_medio=("salario_medio_admissao", "mean"))
-               .sort_values("salario_medio", ascending=False))
-    sal_esc["salario_medio"] = sal_esc["salario_medio"].map(fmt_reais)
-    sal_esc["admissoes"] = sal_esc["admissoes"].map(fmt_num)
-    st.dataframe(
-        sal_esc.rename(columns={"escolaridade": "Escolaridade",
-                                "admissoes": "Admissões",
-                                "salario_medio": "Salário médio"}),
-        use_container_width=True, hide_index=True,
-    )
-
-st.divider()
-
-# -------------------------------------------------------------- ocupações
-st.subheader("Ocupações em destaque")
-ocup_f = filtrar_periodo(ocupacoes, coluna="ano")
-
-if not ocup_f.empty:
-    agg_ocup = (ocup_f.groupby("ocupacao", as_index=False)
-                .agg(saldo=("saldo", "sum"),
-                     admissoes=("admissoes", "sum"),
-                     salario=("salario_medio_admissao", "mean")))
-
-    o1, o2 = st.columns(2)
-    for container, titulo, asc in ((o1, "Maiores saldos positivos", False),
-                                   (o2, "Maiores saldos negativos", True)):
-        top = agg_ocup.sort_values("saldo", ascending=asc).head(10).copy()
-        top["Saldo"] = top["saldo"].map(fmt_num)
-        top["Salário médio"] = top["salario"].map(fmt_reais)
-        container.markdown(f"**{titulo}**")
-        container.dataframe(
-            top[["ocupacao", "Saldo", "Salário médio"]]
-            .rename(columns={"ocupacao": "Ocupação"}),
-            use_container_width=True, hide_index=True,
-        )
+    sal = (demo.groupby("escolaridade", as_index=False)
+           .agg(admissoes=("admissoes", "sum"), salario=("salario_medio", "mean"))
+           .sort_values("salario", ascending=False))
+    sal["Admissões"] = sal["admissoes"].map(fmt_num)
+    sal["Salário médio"] = sal["salario"].map(fmt_reais)
+    st.dataframe(sal[["escolaridade", "Admissões", "Salário médio"]]
+                 .rename(columns={"escolaridade": "Escolaridade"}),
+                 use_container_width=True, hide_index=True)
 
 st.markdown(
-    '<div class="rodape">Camada gold pré-agregada a partir da silver traduzida pelos '
-    'dicionários oficiais do MTE. Saldo = admissões − desligamentos. '
-    'Salário médio considera apenas admissões com valor informado.</div>',
-    unsafe_allow_html=True,
+    '<div class="rodape">'
+    'Fonte: microdados do Novo CAGED (MTE), traduzidos pelos dicionários oficiais. '
+    'Recorte de tecnologia = CNAE de serviços de TI (divisões 62/63) <b>ou</b> '
+    'família CBO de ocupação de TI. '
+    'Saldo = admissões − desligamentos. Salário médio considera apenas admissões '
+    'com valor informado.'
+    '</div>', unsafe_allow_html=True,
 )

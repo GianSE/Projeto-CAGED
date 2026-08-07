@@ -1,28 +1,52 @@
 """
-Acesso à camada gold via DuckDB.
+Consultas do dashboard — DuckDB lendo a silver direto.
 
-Toda leitura passa por aqui e é cacheada pelo Streamlit: os agregados da gold
-são pequenos (milhares de linhas), então cabem em memória e o dashboard
-responde a filtros sem nova ida ao MinIO. É esse cache — somado à
-pré-agregação da gold — que faz a diferença entre um clique instantâneo e um
-clique que varre 725 milhões de linhas na silver.
+POR QUE SEM CAMADA GOLD
+-----------------------
+A silver é recortada em tecnologia: ~4,5 milhões de movimentações, não os 725
+milhões do mercado inteiro. Nessa escala o DuckDB agrega em menos de um
+segundo, então uma camada intermediária de agregados só acrescentaria um
+passo de build e mais uma cópia para manter sincronizada.
+
+As agregações abaixo fazem o papel da gold, e o cache do Streamlit as
+materializa em memória na primeira execução — o efeito prático é o mesmo,
+sem bucket extra.
+
+Se a silver voltar a crescer muito (mercado completo, ou RAIS inteira), o
+caminho é reintroduzir a gold: as consultas daqui viram os agregados de lá
+praticamente sem alteração.
 """
 import duckdb
 import pandas as pd
 import streamlit as st
 
 from extracao_ftp.config_extracao import (
-    BUCKET_GOLD,
+    BUCKET_SILVER,
     MINIO_ACCESS_KEY,
     MINIO_ENDPOINT,
     MINIO_REGION,
     MINIO_SECRET_KEY,
 )
 
+FONTE = f"s3://{BUCKET_SILVER}/caged_mov/**/*.parquet"
+
+# saldomovimentacao vale +1 na admissão e -1 no desligamento: é a definição
+# oficial do saldo do CAGED (geração líquida de emprego formal).
+# O salário médio considera só admissões com valor informado — no
+# desligamento o salário reflete o histórico do vínculo, não o mercado atual,
+# e os zeros (sem informação) afundariam a média.
+METRICAS = """
+    count(*) FILTER (WHERE saldomovimentacao = 1)  AS admissoes,
+    count(*) FILTER (WHERE saldomovimentacao = -1) AS desligamentos,
+    sum(saldomovimentacao)                          AS saldo,
+    round(avg(CASE WHEN saldomovimentacao = 1 AND salario > 0
+                   THEN salario END), 2)            AS salario_medio,
+    round(avg(CASE WHEN saldomovimentacao = 1 THEN idade END), 1) AS idade_media
+"""
+
 
 @st.cache_resource
 def conectar():
-    """Conexão DuckDB apontada para o MinIO (uma por sessão do Streamlit)."""
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute(f"""
@@ -36,19 +60,95 @@ def conectar():
     return con
 
 
-@st.cache_data(ttl=600, show_spinner=False)
-def carregar(nome: str) -> pd.DataFrame:
-    """Lê um agregado da gold inteiro para memória. Vazio se ainda não existir."""
+@st.cache_data(ttl=900, show_spinner="Consultando o data lake…")
+def _consultar(sql: str) -> pd.DataFrame:
     try:
-        return conectar().execute(
-            f"SELECT * FROM read_parquet('s3://{BUCKET_GOLD}/{nome}.parquet')"
-        ).df()
-    except Exception:
+        return conectar().execute(sql).df()
+    except Exception as e:
+        st.error(f"Falha ao consultar a silver: {str(e)[:300]}")
         return pd.DataFrame()
 
 
-def agregados_disponiveis() -> dict[str, bool]:
-    """Quais agregados já foram construídos — o dashboard degrada em vez de quebrar."""
-    nomes = ["saldo_mensal", "saldo_uf", "saldo_setor",
-             "perfil_demografico", "ocupacoes", "saldo_municipio"]
-    return {n: not carregar(n).empty for n in nomes}
+def tem_dados() -> bool:
+    df = _consultar(f"SELECT count(*) AS n FROM read_parquet('{FONTE}')")
+    return not df.empty and df["n"].iloc[0] > 0
+
+
+def mensal() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT competenciamov_data AS competencia, {METRICAS}
+        FROM read_parquet('{FONTE}')
+        WHERE competenciamov_data IS NOT NULL
+        GROUP BY 1 ORDER BY 1
+    """)
+
+
+def mensal_por_uf() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT competenciamov_data AS competencia,
+               uf_descricao AS uf, regiao_descricao AS regiao, {METRICAS}
+        FROM read_parquet('{FONTE}')
+        WHERE competenciamov_data IS NOT NULL AND uf_descricao IS NOT NULL
+        GROUP BY 1, 2, 3 ORDER BY 1
+    """)
+
+
+def por_setor() -> pd.DataFrame:
+    """Setor da EMPRESA que contrata — mostra onde o profissional de TI trabalha."""
+    return _consultar(f"""
+        SELECT ano_particao AS ano, secao_descricao AS setor, {METRICAS}
+        FROM read_parquet('{FONTE}')
+        WHERE secao_descricao IS NOT NULL
+        GROUP BY 1, 2 ORDER BY 1
+    """)
+
+
+def por_ocupacao() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT ano_particao AS ano,
+               cbo2002ocupacao_descricao AS ocupacao, {METRICAS}
+        FROM read_parquet('{FONTE}')
+        WHERE cbo2002ocupacao_descricao IS NOT NULL
+        GROUP BY 1, 2
+        HAVING count(*) >= 50
+        ORDER BY 1
+    """)
+
+
+def demografia() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT ano_particao AS ano,
+               sexo_descricao AS sexo,
+               racacor_descricao AS raca_cor,
+               graudeinstrucao_descricao AS escolaridade,
+               {METRICAS}
+        FROM read_parquet('{FONTE}')
+        GROUP BY 1, 2, 3, 4 ORDER BY 1
+    """)
+
+
+def setor_ti_vs_ocupacao_ti() -> pd.DataFrame:
+    """
+    O cruzamento das duas lentes do recorte.
+
+    Responde quanto do trabalho de TI acontece FORA das empresas de
+    tecnologia — o desenvolvedor do banco, da rede de varejo, do hospital.
+    Classificar em SQL (e não em Python) mantém a lógica junto da definição
+    do recorte e evita trazer as linhas cruas para a memória.
+    """
+    from gold_caged import escopo_tecnologia as esc
+
+    return _consultar(f"""
+        SELECT ano_particao AS ano,
+               CASE
+                 WHEN {esc.sql_filtro_cnae()} AND {esc.sql_filtro_cbo()}
+                   THEN 'Profissional de TI em empresa de TI'
+                 WHEN {esc.sql_filtro_cbo()}
+                   THEN 'Profissional de TI fora do setor de TI'
+                 ELSE 'Outra ocupação em empresa de TI'
+               END AS categoria,
+               secao_descricao AS setor_empresa,
+               {METRICAS}
+        FROM read_parquet('{FONTE}')
+        GROUP BY 1, 2, 3 ORDER BY 1
+    """)
