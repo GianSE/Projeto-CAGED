@@ -87,7 +87,8 @@
   .barra-track { height: 8px; border-radius: 4px; background: var(--gridline); overflow: hidden; margin: 6px 0; }
   .barra-fill { height: 100%; background: linear-gradient(90deg, var(--seq-300), var(--seq-450)); border-radius: 4px; transition: width .4s ease; }
   .contagem { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-  .silver-linha { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline); display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; }
+  .etapa-rotulo { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .barra-fill.barra-silver { background: linear-gradient(90deg, var(--seq-100), var(--seq-300)); }
 
   table.atividade { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.atividade th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; padding: 6px 10px; border-bottom: 1px solid var(--gridline); }
@@ -287,18 +288,21 @@ function atualizarTabelas(tabelas) {
     const pct = t.pct_bronze === null || t.pct_bronze === undefined ? null : t.pct_bronze;
     const div = document.createElement('div');
     div.className = 'card tabela-card';
+    const pctS = t.pct_silver === null || t.pct_silver === undefined ? null : t.pct_silver;
+    const silverCompleta = pctS === 100;
     div.innerHTML = `
       <div class="nome">${t.tabela}</div>
+      <div class="etapa-rotulo">Bronze</div>
       <div class="barra-track"><div class="barra-fill" style="width:${pct ?? (t.bronze > 0 ? 100 : 0)}%"></div></div>
       <div class="contagem">
         <span>${fmt(t.bronze)}${t.bronze_esperado ? ' / ' + fmt(t.bronze_esperado) : ''} arquivo(s)</span>
         <span>${pct !== null ? pct + '%' : ''}</span>
       </div>
-      <div class="silver-linha">
-        <span style="color:var(--text-secondary)">Silver</span>
-        <span style="color:${t.tem_silver ? 'var(--good)' : 'var(--text-muted)'}; font-weight:600;">
-          ${t.tem_silver ? fmt(t.silver) + ' arquivo(s)' : 'pendente'}
-        </span>
+      <div class="etapa-rotulo" style="margin-top:12px;">Silver ${silverCompleta ? '✓' : ''}</div>
+      <div class="barra-track"><div class="barra-fill barra-silver" style="width:${pctS ?? 0}%"></div></div>
+      <div class="contagem">
+        <span>${t.bronze ? fmt(t.silver) + ' / ' + fmt(t.silver_esperado) + ' arquivo(s)' : 'pendente'}</span>
+        <span>${pctS !== null ? pctS + '%' : ''}</span>
       </div>`;
     container.appendChild(div);
   }

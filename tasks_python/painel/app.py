@@ -147,12 +147,18 @@ def _montar_status() -> dict:
         n_silver = _contar_parquets(fs, BUCKET_SILVER, nome) if minio["ok"] else 0
         esperado = TOTAIS_BRONZE.get(nome)
         pct = min(100, round(n_bronze / esperado * 100)) if esperado else None
+        # A silver grava um parquet por arquivo do bronze, então o próprio
+        # bronze é a meta — dá para mostrar o progresso da tradução do mesmo
+        # jeito que o do download, sem precisar de outra tabela de totais.
+        pct_silver = min(100, round(n_silver / n_bronze * 100)) if n_bronze else None
         tabelas.append({
             "tabela": nome,
             "bronze": n_bronze,
             "bronze_esperado": esperado,
             "pct_bronze": pct,
             "silver": n_silver,
+            "silver_esperado": n_bronze,
+            "pct_silver": pct_silver,
             "tem_silver": n_silver > 0,
         })
 
