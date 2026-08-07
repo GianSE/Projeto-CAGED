@@ -31,6 +31,7 @@ from extracao_ftp.config_extracao import (
     MINIO_REGION,
     MINIO_SECRET_KEY,
     STAGING_DIR,
+    conectar_duckdb,
 )
 from painel import processos
 from painel.totais_esperados import TOTAIS_BRONZE
@@ -60,6 +61,7 @@ app = Flask(__name__)
 
 _cache_lock = threading.Lock()
 _cache: dict = {"pronto": False}
+_con = None
 
 
 def _fs():
@@ -86,6 +88,48 @@ def _listar_tabelas(fs, bucket: str) -> list[str]:
     except Exception:
         return []
     return sorted(n for n in nomes if n and n not in PREFIXOS_BRONZE_ESPECIAIS)
+
+
+# Contagem de linhas: (bucket, tabela) -> (n_arquivos, linhas, timestamp)
+_cache_linhas: dict[tuple[str, str], tuple[int, int, float]] = {}
+_TTL_LINHAS = 120
+
+
+def _con_duckdb():
+    global _con
+    if _con is None:
+        _con = conectar_duckdb()
+    return _con
+
+
+def _linhas_parquet(bucket: str, tabela: str, n_arquivos: int) -> int | None:
+    """
+    Total de linhas de uma tabela, lido do RODAPÉ dos parquets.
+
+    `parquet_file_metadata` lê só o footer de cada arquivo, onde a contagem
+    de linhas já está gravada — não varre os dados. Ainda assim são centenas
+    de requisições ao MinIO, caras demais para o refresh de 5 s do painel:
+    por isso o resultado fica em cache e só é recalculado quando a
+    quantidade de arquivos muda (build em andamento) ou o cache envelhece.
+    """
+    if not n_arquivos:
+        return 0
+
+    chave = (bucket, tabela)
+    agora = time.time()
+    cache = _cache_linhas.get(chave)
+    if cache and cache[0] == n_arquivos and agora - cache[2] < _TTL_LINHAS:
+        return cache[1]
+
+    try:
+        linhas = _con_duckdb().execute(
+            f"SELECT sum(num_rows) FROM parquet_file_metadata('s3://{bucket}/{tabela}/**/*.parquet')"
+        ).fetchone()[0] or 0
+    except Exception:
+        return cache[1] if cache else None
+
+    _cache_linhas[chave] = (n_arquivos, int(linhas), agora)
+    return int(linhas)
 
 
 def _listar_parquets(fs, bucket: str, tabela: str) -> list[str]:
@@ -280,6 +324,12 @@ def _montar_status() -> dict:
         # jeito que o do download, sem precisar de outra tabela de totais.
         pct_silver = min(100, round(n_silver / n_bronze * 100)) if n_bronze else None
         agg = por_tabela.get(nome, {})
+        linhas_bronze = _linhas_parquet(BUCKET_BRONZE, nome, n_bronze) if minio["ok"] else None
+        linhas_silver = _linhas_parquet(BUCKET_SILVER, nome, n_silver) if minio["ok"] else None
+        # Com a silver recortada em tecnologia, a razão entre as duas é a
+        # própria fatia de TI no mercado — a leitura mais informativa do card.
+        pct_ti = (round(linhas_silver / linhas_bronze * 100, 2)
+                  if linhas_bronze and linhas_silver is not None else None)
         tabelas.append({
             "tabela": nome,
             "bronze": n_bronze,
@@ -289,7 +339,9 @@ def _montar_status() -> dict:
             "silver_esperado": n_bronze,
             "pct_silver": pct_silver,
             "tem_silver": n_silver > 0,
-            "linhas": agg.get("linhas", 0),
+            "linhas_bronze": linhas_bronze,
+            "linhas_silver": linhas_silver,
+            "pct_ti": pct_ti,
             "bytes": agg.get("bytes", 0),
             "cobertura": _cobertura(caminhos_bronze),
         })

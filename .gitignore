@@ -13,3 +13,11 @@ erros_ingestao_rais.txt
 env.py
 tcc_backup_bronze
 bkp_temporario
+
+# Parquets consolidados para publicacao: vao para o Hugging Face, nao para o
+# git (o maior passa de 100 MB, limite rigido do GitHub por arquivo).
+publicacao/detalhado/
+
+# Os agregados sao pequenos (~100 KB) e VAO versionados de proposito: sao o
+# fallback do dashboard quando nao ha acesso aos dados detalhados.
+!dados_publicados/

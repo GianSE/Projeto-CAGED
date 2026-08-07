@@ -88,6 +88,14 @@
   .barra-fill { height: 100%; background: linear-gradient(90deg, var(--seq-300), var(--seq-450)); border-radius: 4px; transition: width .4s ease; }
   .contagem { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
   .etapa-rotulo { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .linhas-comparacao { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline);
+                       display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .linhas-rotulo { display: block; font-size: 10px; color: var(--text-muted);
+                   text-transform: uppercase; letter-spacing: .04em; }
+  .linhas-valor { font-size: 14px; font-weight: 600; color: var(--text-secondary);
+                  font-variant-numeric: tabular-nums; }
+  .linhas-valor.destaque { color: var(--seq-450); }
+  .fatia-ti { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .card-rodape { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline);
                  display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
                  font-size: 11.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
@@ -193,8 +201,8 @@
   </div>
 
   <div class="stats-row">
-    <div class="card"><div class="stat-value" id="st-linhas">–</div><div class="stat-label">Linhas no lake</div></div>
-    <div class="card"><div class="stat-value" id="st-volume">–</div><div class="stat-label">Volume baixado</div></div>
+    <div class="card"><div class="stat-value" id="st-linhas">–</div><div class="stat-label">Linhas no bronze</div></div>
+    <div class="card"><div class="stat-value" id="st-linhas-ti">–</div><div class="stat-label">Linhas de TI (silver)</div></div>
     <div class="card"><div class="stat-value" id="st-ok">–</div><div class="stat-label">Itens ok</div></div>
     <div class="card"><div class="stat-value" id="st-erro">–</div><div class="stat-label">Itens com erro</div></div>
     <div class="card"><div class="stat-value" id="st-disco">–</div><div class="stat-label">Disco livre</div></div>
@@ -268,9 +276,24 @@ function fmtGB(bytes) {
   return (bytes / 1e9).toFixed(1).replace('.', ',') + ' GB';
 }
 
+function linhasCard(t) {
+  if (!t.linhas_bronze && !t.linhas_silver) return '';
+  // Bronze e silver lado a lado: com a silver recortada em tecnologia, a
+  // razão entre as duas é a fatia de TI daquela tabela.
+  const pct = t.pct_ti !== null && t.pct_ti !== undefined
+    ? `<span class="fatia-ti">${String(t.pct_ti).replace('.', ',')}% é TI</span>` : '';
+  return `<div class="linhas-comparacao">
+            <div><span class="linhas-rotulo">Bronze</span>
+                 <span class="linhas-valor">${fmtCompacto(t.linhas_bronze)}</span></div>
+            <div><span class="linhas-rotulo">Silver (TI)</span>
+                 <span class="linhas-valor destaque">${fmtCompacto(t.linhas_silver)}</span></div>
+            <div>${pct}</div>
+          </div>`;
+}
+
 function rodapeCard(t) {
   const cob = t.cobertura || {};
-  const linhasTxt = t.linhas ? `${fmtCompacto(t.linhas)} linhas` : '';
+  const linhasTxt = '';
   let periodo = '';
   if (cob.inicio) {
     const buracos = (cob.faltando || []).length;
@@ -367,6 +390,7 @@ function atualizarTabelas(tabelas) {
         <span>${t.bronze ? fmt(t.silver) + ' / ' + fmt(t.silver_esperado) + ' arquivo(s)' : 'pendente'}</span>
         <span>${pctS !== null ? pctS + '%' : ''}</span>
       </div>
+      ${linhasCard(t)}
       ${rodapeCard(t)}`;
     container.appendChild(div);
   }
@@ -458,11 +482,16 @@ async function atualizarListaExecucoes() {
   } catch (e) { /* silencioso: não é crítico para o painel funcionar */ }
 }
 
-function atualizarAtividade(manifesto, disco) {
+function atualizarAtividade(manifesto, disco, tabelas) {
   document.getElementById('st-ok').textContent = fmt(manifesto.ok);
   document.getElementById('st-erro').textContent = fmt(manifesto.erro);
-  document.getElementById('st-linhas').textContent = fmtCompacto(manifesto.linhas_total);
-  document.getElementById('st-volume').textContent = fmtGB(manifesto.bytes_total);
+
+  // Totais vêm dos rodapés dos parquets (via /api/status), não do manifesto:
+  // o manifesto só conhece o bronze, e agora a silver é um recorte dele.
+  const totB = (tabelas || []).reduce((s, t) => s + (t.linhas_bronze || 0), 0);
+  const totS = (tabelas || []).reduce((s, t) => s + (t.linhas_silver || 0), 0);
+  document.getElementById('st-linhas').textContent = fmtCompacto(totB);
+  document.getElementById('st-linhas-ti').textContent = fmtCompacto(totS);
   document.getElementById('st-disco').textContent =
     disco && disco.livre_gb !== null ? `${String(disco.livre_gb).replace('.', ',')} GB` : '–';
   atualizarErros(manifesto);
@@ -595,7 +624,7 @@ async function atualizar() {
     atualizarMinio(dados.minio);
     atualizarHeartbeat(dados.heartbeat, dados.processo);
     atualizarTabelas(dados.tabelas);
-    atualizarAtividade(dados.manifesto, dados.disco);
+    atualizarAtividade(dados.manifesto, dados.disco, dados.tabelas);
     atualizarProcesso(dados.processo);
     atualizarListaExecucoes();
   } catch (e) {

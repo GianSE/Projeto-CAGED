@@ -14,3 +14,7 @@ xlrd
 lxml
 # Painel web de observabilidade da extração (tasks_python/painel)
 flask
+# Dashboard analitico (tasks_python/dashboard) e publicacao do dataset
+streamlit
+plotly
+huggingface_hub
