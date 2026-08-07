@@ -26,20 +26,9 @@ from dashboard.tema import fmt_compacto, fmt_num, fmt_reais  # noqa: E402
 st.set_page_config(page_title="Mercado de Trabalho em TI — CAGED",
                    page_icon="💻", layout="wide")
 
-st.markdown(f"""
-<style>
-  .block-container {{ padding-top: 2rem; max-width: 1240px; }}
-  [data-testid="stMetricValue"] {{ font-size: 1.7rem; font-family: {tema.FONTE}; }}
-  [data-testid="stMetricLabel"] {{ color: {tema.TEXTO_SEC}; }}
-  h1, h2, h3 {{ font-family: {tema.FONTE}; }}
-  .lead {{ font-size: 1.05rem; line-height: 1.65; color: {tema.TEXTO_SEC}; margin-bottom: 6px; }}
-  .leitura {{ font-size: 0.95rem; line-height: 1.65; color: {tema.TEXTO_SEC};
-              border-left: 3px solid {tema.SERIE_1}; padding: 2px 0 2px 14px;
-              margin: 8px 0 18px 0; }}
-  .rodape {{ color: {tema.MUTED}; font-size: 12px; margin-top: 16px; line-height: 1.6; }}
-  .stTabs [data-baseweb="tab"] {{ font-size: 0.95rem; }}
-</style>
-""", unsafe_allow_html=True)
+# O CSS é montado com as cores do tema ATIVO (ver tema.css): fixar cores aqui
+# deixaria o texto ilegível para quem usa o modo escuro.
+st.markdown(tema.css(), unsafe_allow_html=True)
 
 
 def leitura(texto: str):
