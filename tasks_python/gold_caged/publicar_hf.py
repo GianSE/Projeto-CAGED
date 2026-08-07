@@ -78,13 +78,7 @@ Aspersão" e "Montador de Sistemas de Combustível de Aeronaves".
 
 ## Arquivos
 
-| Arquivo | Conteúdo |
-|---|---|
-| `caged_mov.parquet` | Movimentações do Novo CAGED (2020+) |
-| `caged_old.parquet` | CAGED antigo (2007–2019) |
-| `caged_ajustes.parquet` | Declarações fora do prazo |
-| `caged_for.parquet` | Movimentações fora do prazo (Novo CAGED) |
-| `caged_exc.parquet` | Exclusões (Novo CAGED) |
+{tabela_arquivos}
 
 Ordenados por competência, o que permite ao leitor pular row groups ao
 filtrar por período.
@@ -115,6 +109,30 @@ duckdb.sql(f'''
 Dados originais são públicos (MTE/PDET). Este derivado é distribuído sob
 ODC-BY: cite a fonte original e este tratamento.
 """
+
+
+DESCRICAO_TABELA = {
+    "caged_mov": "Movimentações do Novo CAGED (2020+)",
+    "caged_for": "Movimentações declaradas fora do prazo (Novo CAGED)",
+    "caged_exc": "Exclusões de movimentações (Novo CAGED)",
+    "caged_old": "CAGED antigo — CAGEDEST (2007–2019)",
+    "caged_ajustes": "Ajustes/declarações fora do prazo (CAGED antigo)",
+}
+
+
+def _tabela_de_arquivos(arquivos: list[Path]) -> str:
+    """
+    Monta a tabela do card a partir do que está REALMENTE sendo publicado.
+
+    Fixar a lista no texto faria o card prometer arquivos ausentes numa
+    publicação parcial — e a publicação é parcial por natureza enquanto a
+    silver de alguma tabela ainda está sendo construída.
+    """
+    linhas = ["| Arquivo | Conteúdo | Tamanho |", "|---|---|---|"]
+    for a in arquivos:
+        descricao = DESCRICAO_TABELA.get(a.stem, "—")
+        linhas.append(f"| `{a.name}` | {descricao} | {a.stat().st_size / 1e6:.1f} MB |")
+    return "\n".join(linhas)
 
 
 def _tem_login_cli() -> bool:
@@ -174,7 +192,11 @@ def main() -> int:
     # O card vai junto: é ele que documenta o recorte metodológico para quem
     # baixar os dados sem ter lido o trabalho.
     cartao = DIR_DETALHADO / "README.md"
-    cartao.write_text(CARTAO.replace("{repo}", args.repo), encoding="utf-8")
+    cartao.write_text(
+        CARTAO.replace("{repo}", args.repo)
+              .replace("{tabela_arquivos}", _tabela_de_arquivos(arquivos)),
+        encoding="utf-8",
+    )
 
     total = 0
     for arquivo in arquivos + [cartao]:

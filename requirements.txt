@@ -1,0 +1,12 @@
+# Dependências do DASHBOARD publicado (Streamlit Community Cloud lê este
+# arquivo na raiz do repositório).
+#
+# Deliberadamente enxuto: o app hospedado só lê parquet por HTTPS e desenha
+# gráficos. Tudo que é do pipeline de ingestão — py7zr, s3fs, boto3, flask,
+# openpyxl — fica em worker/requirements.txt e roda apenas na máquina local.
+# Instalar aquilo aqui só faria o deploy demorar mais e falhar mais.
+streamlit
+plotly
+duckdb
+pandas
+python-dotenv
