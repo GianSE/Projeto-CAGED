@@ -51,6 +51,12 @@ def _caminho(tabela: str) -> str:
 
 FONTE = _caminho("caged_mov")
 
+# Arquivo único com as duas gerações harmonizadas (ver gold_caged/unificar.py):
+# nomes de coluna estáveis e setor comparável em toda a série 2007–2026.
+# Quando existe, é a fonte preferida — evita repetir a lógica de união em
+# cada consulta e cobre 20 anos em vez de 6.
+FONTE_UNIF = _caminho("caged_ti")
+
 # As duas gerações do CAGED têm nomes de coluna diferentes para os MESMOS
 # conceitos — o Novo CAGED reescreveu o layout em 2020. Unificar em uma view
 # é o que permite a série contínua 2007–2026; sem isso o dashboard começaria
@@ -258,34 +264,76 @@ def setor_ti_vs_ocupacao_ti() -> pd.DataFrame:
     return _obter("lentes")
 
 
-def serie_longa() -> pd.DataFrame:
-    """Série mensal 2007–2026, unindo as duas gerações do CAGED."""
-    return _consultar(f"""
-        SELECT competencia, geracao, {METRICAS_UNIF}
-        FROM ({FONTE_UNIFICADA})
-        WHERE competencia IS NOT NULL
-        GROUP BY 1, 2 ORDER BY 1
-    """)
+# Métricas sobre o arquivo unificado, cujas colunas já têm nomes estáveis.
+METRICAS_UNI = """
+    count(*) FILTER (WHERE saldo = 1)  AS admissoes,
+    count(*) FILTER (WHERE saldo = -1) AS desligamentos,
+    sum(saldo)                          AS saldo,
+    round(avg(CASE WHEN saldo = 1 AND salario > 0 THEN salario END), 2) AS salario_medio,
+    round(avg(CASE WHEN saldo = 1 THEN idade END), 1) AS idade_media
+"""
 
 
-def serie_longa_anual() -> pd.DataFrame:
-    """Agregado anual da série longa — usado nos indicadores de contexto."""
-    return _consultar(f"""
-        SELECT ano_particao AS ano, geracao, {METRICAS_UNIF}
-        FROM ({FONTE_UNIFICADA})
-        GROUP BY 1, 2 ORDER BY 1
-    """)
-
-
+@st.cache_resource
 def tem_serie_longa() -> bool:
-    """A série histórica depende do caged_old estar publicado."""
+    """A série de 20 anos depende do arquivo unificado estar publicado."""
     try:
-        conectar().execute(
-            f"SELECT 1 FROM read_parquet('{_caminho('caged_old')}') LIMIT 1"
-        ).fetchone()
+        conectar().execute(f"SELECT 1 FROM read_parquet('{FONTE_UNIF}') LIMIT 1").fetchone()
         return True
     except Exception:
         return False
+
+
+def serie_longa_anual() -> pd.DataFrame:
+    """Agregado anual 2007–2026 — o esqueleto da narrativa histórica."""
+    return _consultar(f"""
+        SELECT ano, geracao, {METRICAS_UNI}
+        FROM read_parquet('{FONTE_UNIF}')
+        GROUP BY 1, 2 ORDER BY 1
+    """)
+
+
+def serie_longa_mensal() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT competencia, {METRICAS_UNI}
+        FROM read_parquet('{FONTE_UNIF}')
+        WHERE competencia IS NOT NULL GROUP BY 1 ORDER BY 1
+    """)
+
+
+def setor_longo() -> pd.DataFrame:
+    """Série setorial dos 20 anos — possível porque a seção do CAGED antigo
+    é derivada do CNAE 2.0 (ver gold_caged/cnae_secao.py)."""
+    return _consultar(f"""
+        SELECT ano, setor, {METRICAS_UNI}
+        FROM read_parquet('{FONTE_UNIF}')
+        WHERE setor IS NOT NULL GROUP BY 1, 2 ORDER BY 1
+    """)
+
+
+def uf_longo() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT ano, uf, {METRICAS_UNI}
+        FROM read_parquet('{FONTE_UNIF}')
+        WHERE uf IS NOT NULL GROUP BY 1, 2 ORDER BY 1
+    """)
+
+
+def ocupacao_longa() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT ano, ocupacao, {METRICAS_UNI}
+        FROM read_parquet('{FONTE_UNIF}')
+        WHERE ocupacao IS NOT NULL
+        GROUP BY 1, 2 HAVING count(*) >= 50 ORDER BY 1
+    """)
+
+
+def demografia_longa() -> pd.DataFrame:
+    return _consultar(f"""
+        SELECT ano, sexo, raca_cor, escolaridade, {METRICAS_UNI}
+        FROM read_parquet('{FONTE_UNIF}')
+        GROUP BY 1, 2, 3, 4 ORDER BY 1
+    """)
 
 
 def fonte_atual() -> str:
