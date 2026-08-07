@@ -12,6 +12,8 @@ Uso:
     # abre em http://127.0.0.1:8088
 """
 import csv
+import re
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -28,6 +30,7 @@ from extracao_ftp.config_extracao import (
     MINIO_ENDPOINT,
     MINIO_REGION,
     MINIO_SECRET_KEY,
+    STAGING_DIR,
 )
 from painel import processos
 from painel.totais_esperados import TOTAIS_BRONZE
@@ -85,11 +88,29 @@ def _listar_tabelas(fs, bucket: str) -> list[str]:
     return sorted(n for n in nomes if n and n not in PREFIXOS_BRONZE_ESPECIAIS)
 
 
-def _contar_parquets(fs, bucket: str, tabela: str) -> int:
+def _listar_parquets(fs, bucket: str, tabela: str) -> list[str]:
     try:
-        return len(fs.glob(f"{bucket}/{tabela}/**/*.parquet"))
+        return fs.glob(f"{bucket}/{tabela}/**/*.parquet")
     except Exception:
+        return []
+
+
+def _contar_parquets(fs, bucket: str, tabela: str) -> int:
+    return len(_listar_parquets(fs, bucket, tabela))
+
+
+def _int(valor) -> int:
+    try:
+        return int(float(valor))
+    except (TypeError, ValueError):
         return 0
+
+
+def _float(valor) -> float:
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _chave_item(row: dict) -> tuple:
@@ -131,13 +152,110 @@ def _ler_manifesto() -> dict:
     ok_atuais = len(ultimo_por_item) - len(erros_atuais)
     erros_atuais.sort(key=lambda r: r.get("data_hora", ""), reverse=True)
 
+    # Agregados por tabela: contagem de arquivos não diz volume — caged_exc
+    # tem 75 arquivos e 616 mil linhas, caged_ajustes tem 128 e 29 milhões.
+    por_tabela: dict[str, dict] = {}
+    total_linhas = total_bytes = 0.0
+    segundos_por_item: list[float] = []
+
+    for row in ultimo_por_item.values():
+        if row.get("status") != "ok":
+            continue
+        agg = por_tabela.setdefault(row.get("tabela", "?"), {"linhas": 0, "bytes": 0})
+        agg["linhas"] += _int(row.get("linhas"))
+        agg["bytes"] += _int(row.get("bytes_compactado"))
+        total_linhas += _int(row.get("linhas"))
+        total_bytes += _int(row.get("bytes_compactado"))
+        seg = _float(row.get("segundos"))
+        if seg > 0:
+            segundos_por_item.append(seg)
+
     return {
         "total": len(ultimo_por_item),
         "ok": ok_atuais,
         "erro": len(erros_atuais),
         "recentes": list(reversed(linhas[-LINHAS_ATIVIDADE_RECENTE:])),
         "erros": erros_atuais,
+        "linhas_total": int(total_linhas),
+        "bytes_total": int(total_bytes),
+        "segundos_medio": round(sum(segundos_por_item) / len(segundos_por_item), 1)
+                          if segundos_por_item else None,
+        "por_tabela": por_tabela,
     }
+
+
+RE_ANO = re.compile(r"ano=(\d{4})")
+RE_MES = re.compile(r"mes=(\d{1,2})")
+
+
+def _cobertura(caminhos: list[str]) -> dict:
+    """
+    Competências presentes e — mais importante — as que faltam no meio.
+
+    Para análise de série temporal um buraco no meio é bem pior que um total
+    menor do que o esperado: "156/156 arquivos" não garante que os 13 anos
+    estão contínuos. Só considera lacuna o que está DENTRO do intervalo já
+    coberto (entre a primeira e a última competência); nada é reportado como
+    faltando depois do fim da série, que é só dado ainda não publicado.
+    """
+    competencias = set()
+    anuais = set()
+
+    for caminho in caminhos:
+        m_ano = RE_ANO.search(caminho)
+        if not m_ano:
+            continue
+        ano = int(m_ano.group(1))
+        m_mes = RE_MES.search(caminho)
+        if m_mes:
+            competencias.add((ano, int(m_mes.group(1))))
+        else:
+            anuais.add(ano)
+
+    if competencias:
+        ordenadas = sorted(competencias)
+        (ano_i, mes_i), (ano_f, mes_f) = ordenadas[0], ordenadas[-1]
+        esperadas = {
+            (a, m)
+            for a in range(ano_i, ano_f + 1)
+            for m in range(1, 13)
+            if (a, m) >= (ano_i, mes_i) and (a, m) <= (ano_f, mes_f)
+        }
+        faltando = sorted(esperadas - competencias)
+        return {
+            "inicio": f"{ano_i}-{mes_i:02d}",
+            "fim": f"{ano_f}-{mes_f:02d}",
+            "presentes": len(competencias),
+            "faltando": [f"{a}-{m:02d}" for a, m in faltando],
+        }
+
+    if anuais:
+        ordenados = sorted(anuais)
+        faltando = [a for a in range(ordenados[0], ordenados[-1] + 1) if a not in anuais]
+        return {
+            "inicio": str(ordenados[0]),
+            "fim": str(ordenados[-1]),
+            "presentes": len(anuais),
+            "faltando": [str(a) for a in faltando],
+        }
+
+    return {"inicio": None, "fim": None, "presentes": 0, "faltando": []}
+
+
+def _disco() -> dict:
+    """Uso do disco onde fica o staging — já tivemos carga morrendo por falta de espaço."""
+    try:
+        uso = shutil.disk_usage(STAGING_DIR)
+        staging_bytes = sum(
+            f.stat().st_size for f in Path(STAGING_DIR).rglob("*") if f.is_file()
+        )
+        return {
+            "livre_gb": round(uso.free / 1e9, 1),
+            "total_gb": round(uso.total / 1e9, 1),
+            "staging_gb": round(staging_bytes / 1e9, 2),
+        }
+    except Exception:
+        return {"livre_gb": None, "total_gb": None, "staging_gb": None}
 
 
 def _montar_status() -> dict:
@@ -147,9 +265,13 @@ def _montar_status() -> dict:
     tabelas_bronze = set(_listar_tabelas(fs, BUCKET_BRONZE)) | set(TOTAIS_BRONZE)
     tabelas_silver = set(_listar_tabelas(fs, BUCKET_SILVER))
 
+    manifesto = _ler_manifesto()
+    por_tabela = manifesto["por_tabela"]
+
     tabelas = []
     for nome in sorted(tabelas_bronze | tabelas_silver):
-        n_bronze = _contar_parquets(fs, BUCKET_BRONZE, nome) if minio["ok"] else 0
+        caminhos_bronze = _listar_parquets(fs, BUCKET_BRONZE, nome) if minio["ok"] else []
+        n_bronze = len(caminhos_bronze)
         n_silver = _contar_parquets(fs, BUCKET_SILVER, nome) if minio["ok"] else 0
         esperado = TOTAIS_BRONZE.get(nome)
         pct = min(100, round(n_bronze / esperado * 100)) if esperado else None
@@ -157,6 +279,7 @@ def _montar_status() -> dict:
         # bronze é a meta — dá para mostrar o progresso da tradução do mesmo
         # jeito que o do download, sem precisar de outra tabela de totais.
         pct_silver = min(100, round(n_silver / n_bronze * 100)) if n_bronze else None
+        agg = por_tabela.get(nome, {})
         tabelas.append({
             "tabela": nome,
             "bronze": n_bronze,
@@ -166,6 +289,9 @@ def _montar_status() -> dict:
             "silver_esperado": n_bronze,
             "pct_silver": pct_silver,
             "tem_silver": n_silver > 0,
+            "linhas": agg.get("linhas", 0),
+            "bytes": agg.get("bytes", 0),
+            "cobertura": _cobertura(caminhos_bronze),
         })
 
     return {
@@ -174,8 +300,9 @@ def _montar_status() -> dict:
         "minio": minio,
         "heartbeat": heartbeat.ler(),
         "tabelas": tabelas,
-        "manifesto": _ler_manifesto(),
+        "manifesto": manifesto,
         "processo": processos.status(),
+        "disco": _disco(),
     }
 
 

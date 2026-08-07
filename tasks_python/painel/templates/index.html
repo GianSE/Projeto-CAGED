@@ -88,6 +88,9 @@
   .barra-fill { height: 100%; background: linear-gradient(90deg, var(--seq-300), var(--seq-450)); border-radius: 4px; transition: width .4s ease; }
   .contagem { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
   .etapa-rotulo { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .card-rodape { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline);
+                 display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+                 font-size: 11.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
   .barra-fill.barra-silver { background: linear-gradient(90deg, var(--seq-100), var(--seq-300)); }
 
   table.atividade { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -190,9 +193,11 @@
   </div>
 
   <div class="stats-row">
+    <div class="card"><div class="stat-value" id="st-linhas">–</div><div class="stat-label">Linhas no lake</div></div>
+    <div class="card"><div class="stat-value" id="st-volume">–</div><div class="stat-label">Volume baixado</div></div>
     <div class="card"><div class="stat-value" id="st-ok">–</div><div class="stat-label">Itens ok</div></div>
     <div class="card"><div class="stat-value" id="st-erro">–</div><div class="stat-label">Itens com erro</div></div>
-    <div class="card"><div class="stat-value" id="st-total">–</div><div class="stat-label">Total processado</div></div>
+    <div class="card"><div class="stat-value" id="st-disco">–</div><div class="stat-label">Disco livre</div></div>
   </div>
 
   <h2>Tabelas</h2>
@@ -250,6 +255,39 @@ const REFRESH_MS = {{ refresh_ms }};
 
 function fmt(n) { return n === null || n === undefined ? '–' : n.toLocaleString('pt-BR'); }
 
+function fmtCompacto(n) {
+  if (!n) return '0';
+  if (n >= 1e9) return (n / 1e9).toFixed(1).replace('.', ',') + ' bi';
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace('.', ',') + ' mi';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + ' mil';
+  return String(n);
+}
+
+function fmtGB(bytes) {
+  if (!bytes) return '–';
+  return (bytes / 1e9).toFixed(1).replace('.', ',') + ' GB';
+}
+
+function rodapeCard(t) {
+  const cob = t.cobertura || {};
+  const linhasTxt = t.linhas ? `${fmtCompacto(t.linhas)} linhas` : '';
+  let periodo = '';
+  if (cob.inicio) {
+    const buracos = (cob.faltando || []).length;
+    // Lacuna no meio da série é o que realmente compromete análise temporal —
+    // por isso ela ganha destaque em vermelho, e não só uma contagem a menos.
+    periodo = buracos
+      ? `<span title="Faltando: ${cob.faltando.join(', ')}" style="color:var(--critical); font-weight:600;">
+           ${cob.inicio} → ${cob.fim} · ${buracos} lacuna(s)</span>`
+      : `<span style="color:var(--good);">${cob.inicio} → ${cob.fim} · sem lacunas</span>`;
+  }
+  if (!linhasTxt && !periodo) return '';
+  return `<div class="card-rodape">
+            <span>${linhasTxt}</span>
+            <span>${periodo}</span>
+          </div>`;
+}
+
 function atualizarHeartbeat(hb, proc) {
   const box = document.getElementById('heartbeat');
   const titulo = document.getElementById('hb-titulo');
@@ -277,7 +315,18 @@ function atualizarHeartbeat(hb, proc) {
   box.classList.remove('ocioso');
   titulo.textContent = `[${hb.indice}/${hb.total}] ${hb.rotulo}  (${hb.tamanho_mb} MB)`;
   const etapa = ETAPAS[hb.etapa] || hb.etapa;
-  sub.textContent = `${etapa} · atualizado há ${Math.round(hb.idade_segundos)}s`;
+  let texto = `${etapa} · atualizado há ${Math.round(hb.idade_segundos)}s`;
+
+  // ETA pela média histórica de segundos por item (vem do manifesto). É uma
+  // estimativa grosseira: a velocidade do FTP do MTE oscila bastante entre
+  // arquivos, então serve para ordem de grandeza, não para hora marcada.
+  if (segundosMedioItem && hb.total > hb.indice) {
+    const restantesSeg = (hb.total - hb.indice) * segundosMedioItem;
+    const h = Math.floor(restantesSeg / 3600);
+    const m = Math.round((restantesSeg % 3600) / 60);
+    texto += ` · restam ~${h > 0 ? h + 'h ' : ''}${m}min (${hb.total - hb.indice} itens)`;
+  }
+  sub.textContent = texto;
 }
 
 function atualizarMinio(minio) {
@@ -317,13 +366,15 @@ function atualizarTabelas(tabelas) {
       <div class="contagem">
         <span>${t.bronze ? fmt(t.silver) + ' / ' + fmt(t.silver_esperado) + ' arquivo(s)' : 'pendente'}</span>
         <span>${pctS !== null ? pctS + '%' : ''}</span>
-      </div>`;
+      </div>
+      ${rodapeCard(t)}`;
     container.appendChild(div);
   }
 }
 
 let processoRodando = false;
 let ultimaContagemErros = 0;
+let segundosMedioItem = null;
 
 function atualizarBotaoRetentar() {
   const btn = document.getElementById('btn-retentar');
@@ -407,10 +458,13 @@ async function atualizarListaExecucoes() {
   } catch (e) { /* silencioso: não é crítico para o painel funcionar */ }
 }
 
-function atualizarAtividade(manifesto) {
+function atualizarAtividade(manifesto, disco) {
   document.getElementById('st-ok').textContent = fmt(manifesto.ok);
   document.getElementById('st-erro').textContent = fmt(manifesto.erro);
-  document.getElementById('st-total').textContent = fmt(manifesto.total);
+  document.getElementById('st-linhas').textContent = fmtCompacto(manifesto.linhas_total);
+  document.getElementById('st-volume').textContent = fmtGB(manifesto.bytes_total);
+  document.getElementById('st-disco').textContent =
+    disco && disco.livre_gb !== null ? `${String(disco.livre_gb).replace('.', ',')} GB` : '–';
   atualizarErros(manifesto);
 
   const body = document.getElementById('atividade-body');
@@ -537,10 +591,11 @@ async function atualizar() {
     const resp = await fetch('/api/status');
     const dados = await resp.json();
     if (!dados.pronto) return;
+    segundosMedioItem = dados.manifesto ? dados.manifesto.segundos_medio : null;
     atualizarMinio(dados.minio);
     atualizarHeartbeat(dados.heartbeat, dados.processo);
     atualizarTabelas(dados.tabelas);
-    atualizarAtividade(dados.manifesto);
+    atualizarAtividade(dados.manifesto, dados.disco);
     atualizarProcesso(dados.processo);
     atualizarListaExecucoes();
   } catch (e) {

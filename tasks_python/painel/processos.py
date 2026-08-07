@@ -10,6 +10,7 @@ O subprocesso roda com PYTHONUNBUFFERED=1 e stdout/stderr redirecionados para
 um arquivo de log — sem isso, no Windows, a saída fica bufferizada em bloco
 até o processo terminar, e o log tail do painel ficaria sempre vazio.
 """
+import json
 import os
 import subprocess
 import sys
@@ -33,6 +34,58 @@ _tipo: str = "extração"
 _iniciado_em: float | None = None
 _finalizado_em: float | None = None
 _codigo_saida: int | None = None
+
+
+ARQUIVO_JOB_ATIVO = DIR_LOGS / "job_ativo.json"
+
+
+def _salvar_job_ativo(pid: int, comando: list[str], tipo: str, caminho_log: Path) -> None:
+    """
+    Registra o job em disco para que um restart do painel não perca o rastro.
+
+    Sem isso, reiniciar o painel com uma carga em andamento fazia o card voltar
+    a dizer "Ocioso" — o processo continuava rodando, mas o handle vivia só na
+    memória do painel.
+    """
+    try:
+        import psutil
+
+        DIR_LOGS.mkdir(parents=True, exist_ok=True)
+        ARQUIVO_JOB_ATIVO.write_text(json.dumps({
+            "pid": pid,
+            "comando": comando,
+            "tipo": tipo,
+            "log": str(caminho_log),
+            "iniciado_em": time.time(),
+            # Guarda o instante de criação do processo: PID no Windows é
+            # reciclado, e sem isso um PID reaproveitado por outro programa
+            # seria confundido com o nosso job.
+            "criado_em": psutil.Process(pid).create_time(),
+        }), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _limpar_job_ativo() -> None:
+    try:
+        ARQUIVO_JOB_ATIVO.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _adotar_job_ativo() -> dict | None:
+    """Reassume um job registrado em disco, se o processo ainda estiver vivo."""
+    try:
+        import psutil
+
+        dados = json.loads(ARQUIVO_JOB_ATIVO.read_text(encoding="utf-8"))
+        proc = psutil.Process(dados["pid"])
+        # Compara o instante de criação para descartar PID reciclado.
+        if abs(proc.create_time() - dados["criado_em"]) > 1:
+            return None
+        return dados
+    except Exception:
+        return None
 
 
 def _caminho_log_mais_recente() -> Path | None:
@@ -90,6 +143,7 @@ def _lancar(comando: list[str], rotulo: str, tipo: str) -> dict:
         _finalizado_em = None
         _codigo_saida = None
 
+        _salvar_job_ativo(_processo.pid, comando, tipo, caminho_log)
         return {"ok": True, "pid": _processo.pid, "comando": " ".join(comando)}
 
 
@@ -115,8 +169,28 @@ def parar() -> dict:
     global _codigo_saida, _finalizado_em
 
     with _lock:
-        if _processo is None or _processo.poll() is not None:
-            return {"ok": False, "erro": "Nenhuma extração rodando."}
+        # Job adotado após restart do painel: não há handle de subprocesso,
+        # então encerra pelo PID registrado em disco.
+        if _processo is None:
+            adotado = _adotar_job_ativo()
+            if not adotado:
+                return {"ok": False, "erro": "Nenhum job rodando."}
+            try:
+                import psutil
+
+                proc = psutil.Process(adotado["pid"])
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+            except Exception as e:
+                return {"ok": False, "erro": f"não consegui encerrar o job: {str(e)[:150]}"}
+            _limpar_job_ativo()
+            return {"ok": True, "codigo_saida": None}
+
+        if _processo.poll() is not None:
+            return {"ok": False, "erro": "Nenhum job rodando."}
 
         _processo.terminate()
         try:
@@ -127,6 +201,7 @@ def parar() -> dict:
 
         _codigo_saida = _processo.returncode
         _finalizado_em = time.time()
+        _limpar_job_ativo()
         return {"ok": True, "codigo_saida": _codigo_saida}
 
 
@@ -162,6 +237,26 @@ def status() -> dict:
         if _processo is not None and not rodando and _codigo_saida is None:
             _codigo_saida = _processo.returncode
             _finalizado_em = time.time()
+            _limpar_job_ativo()
+
+        # Painel recém-reiniciado não tem handle do processo em memória, mas o
+        # job pode continuar rodando — readota pelo registro em disco.
+        if _processo is None:
+            adotado = _adotar_job_ativo()
+            if adotado:
+                caminho_adotado = Path(adotado["log"])
+                return {
+                    "rodando": True,
+                    "adotado": True,
+                    "tipo": adotado.get("tipo", "job"),
+                    "pid": adotado["pid"],
+                    "comando": " ".join(adotado.get("comando", [])),
+                    "log_arquivo": caminho_adotado.name,
+                    "iniciado_em": adotado.get("iniciado_em"),
+                    "finalizado_em": None,
+                    "codigo_saida": None,
+                    "log_tail": _tail(caminho_adotado, 60),
+                }
 
         # Fora de uma execução ativa, ainda mostra a cauda do último log —
         # útil pra ver como uma carga terminou sem precisar abrir o arquivo.
