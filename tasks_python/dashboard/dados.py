@@ -42,8 +42,38 @@ from extracao_ftp.config_extracao import (
 # listagem de diretório, por isso a versão publicada é UM arquivo por tabela
 # (ver gold_caged/consolidar.py).
 URL_BASE = os.getenv("DADOS_URL_BASE", "").rstrip("/")
-FONTE = (f"{URL_BASE}/caged_mov.parquet" if URL_BASE
-         else f"s3://{BUCKET_SILVER}/caged_mov/**/*.parquet")
+
+
+def _caminho(tabela: str) -> str:
+    return (f"{URL_BASE}/{tabela}.parquet" if URL_BASE
+            else f"s3://{BUCKET_SILVER}/{tabela}/**/*.parquet")
+
+
+FONTE = _caminho("caged_mov")
+
+# As duas gerações do CAGED têm nomes de coluna diferentes para os MESMOS
+# conceitos — o Novo CAGED reescreveu o layout em 2020. Unificar em uma view
+# é o que permite a série contínua 2007–2026; sem isso o dashboard começaria
+# em 2020 e perderia a crise de 2015-16 e o ciclo pré-pandemia.
+#
+# Fica de fora, de propósito, o setor da empresa: o CAGED antigo classifica
+# por subsetor IBGE e o novo por seção CNAE. São taxonomias distintas, e
+# empilhá-las produziria uma série falsa.
+FONTE_UNIFICADA = f"""
+    SELECT competenciamov_data AS competencia, uf_descricao, municipio_descricao,
+           cbo2002ocupacao_descricao, sexo_descricao, racacor_descricao,
+           graudeinstrucao_descricao AS escolaridade_descricao,
+           saldomovimentacao AS saldo_mov, salario AS salario_valor, idade,
+           ano_particao, 'Novo CAGED' AS geracao
+    FROM read_parquet('{_caminho("caged_mov")}')
+    UNION ALL
+    SELECT competencia_declarada_data, uf_descricao, municipio_descricao,
+           cbo_2002_ocupacao_descricao, sexo_descricao, raca_cor_descricao,
+           grau_instrucao_descricao,
+           saldo_mov, salario_mensal, idade,
+           ano_particao, 'CAGED antigo'
+    FROM read_parquet('{_caminho("caged_old")}')
+"""
 
 # saldomovimentacao vale +1 na admissão e -1 no desligamento: é a definição
 # oficial do saldo do CAGED (geração líquida de emprego formal).
@@ -57,6 +87,16 @@ METRICAS = """
     round(avg(CASE WHEN saldomovimentacao = 1 AND salario > 0
                    THEN salario END), 2)            AS salario_medio,
     round(avg(CASE WHEN saldomovimentacao = 1 THEN idade END), 1) AS idade_media
+"""
+
+# Mesmas métricas sobre a view unificada, que renomeia as colunas.
+METRICAS_UNIF = """
+    count(*) FILTER (WHERE saldo_mov = 1)  AS admissoes,
+    count(*) FILTER (WHERE saldo_mov = -1) AS desligamentos,
+    sum(saldo_mov)                          AS saldo,
+    round(avg(CASE WHEN saldo_mov = 1 AND salario_valor > 0
+                   THEN salario_valor END), 2)      AS salario_medio,
+    round(avg(CASE WHEN saldo_mov = 1 THEN idade END), 1) AS idade_media
 """
 
 
@@ -216,6 +256,36 @@ def demografia() -> pd.DataFrame:
 
 def setor_ti_vs_ocupacao_ti() -> pd.DataFrame:
     return _obter("lentes")
+
+
+def serie_longa() -> pd.DataFrame:
+    """Série mensal 2007–2026, unindo as duas gerações do CAGED."""
+    return _consultar(f"""
+        SELECT competencia, geracao, {METRICAS_UNIF}
+        FROM ({FONTE_UNIFICADA})
+        WHERE competencia IS NOT NULL
+        GROUP BY 1, 2 ORDER BY 1
+    """)
+
+
+def serie_longa_anual() -> pd.DataFrame:
+    """Agregado anual da série longa — usado nos indicadores de contexto."""
+    return _consultar(f"""
+        SELECT ano_particao AS ano, geracao, {METRICAS_UNIF}
+        FROM ({FONTE_UNIFICADA})
+        GROUP BY 1, 2 ORDER BY 1
+    """)
+
+
+def tem_serie_longa() -> bool:
+    """A série histórica depende do caged_old estar publicado."""
+    try:
+        conectar().execute(
+            f"SELECT 1 FROM read_parquet('{_caminho('caged_old')}') LIMIT 1"
+        ).fetchone()
+        return True
+    except Exception:
+        return False
 
 
 def fonte_atual() -> str:
