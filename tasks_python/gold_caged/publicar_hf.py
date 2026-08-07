@@ -117,6 +117,16 @@ ODC-BY: cite a fonte original e este tratamento.
 """
 
 
+def _tem_login_cli() -> bool:
+    """Detecta o token guardado pelo `huggingface-cli login`."""
+    try:
+        from huggingface_hub import get_token
+
+        return bool(get_token())
+    except Exception:
+        return False
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Publica os parquets no Hugging Face.")
     p.add_argument("--repo", required=True,
@@ -125,10 +135,23 @@ def main() -> int:
                    help="Cria o dataset privado (padrão: público)")
     args = p.parse_args()
 
-    token = os.getenv("HF_TOKEN")
-    if not token:
-        print("❌ Defina HF_TOKEN com um token de escrita do Hugging Face.")
-        print("   Crie em: https://huggingface.co/settings/tokens")
+    # Três origens aceitas, da mais segura para a mais prática:
+    #   1. login do huggingface-cli — token fica em ~/.cache/huggingface,
+    #      FORA do projeto (não viaja se você zipar ou copiar a pasta);
+    #   2. variável de ambiente HF_TOKEN;
+    #   3. HF_TOKEN no .env da raiz — daí o load_dotenv abaixo, sem o qual
+    #      colocar o token no .env simplesmente não teria efeito aqui.
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+    token = os.getenv("HF_TOKEN")  # None faz o HfApi cair no login do CLI
+
+    if not token and not _tem_login_cli():
+        print("❌ Nenhuma credencial do Hugging Face encontrada. Use uma destas:")
+        print("   1) ../.venv/Scripts/huggingface-cli login      (recomendado)")
+        print("   2) set HF_TOKEN=hf_xxxxx")
+        print("   3) HF_TOKEN=hf_xxxxx no .env da raiz")
+        print("\n   Crie o token em https://huggingface.co/settings/tokens (papel: write)")
         return 1
 
     arquivos = sorted(DIR_DETALHADO.glob("*.parquet"))
