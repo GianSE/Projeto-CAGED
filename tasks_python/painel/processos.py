@@ -29,6 +29,7 @@ _lock = threading.Lock()
 _processo: subprocess.Popen | None = None
 _comando: list[str] = []
 _caminho_log: Path | None = None
+_tipo: str = "extração"
 _iniciado_em: float | None = None
 _finalizado_em: float | None = None
 _codigo_saida: int | None = None
@@ -57,19 +58,21 @@ def _montar_comando(dataset: list[str], ano_inicio: int, ano_fim: int | None = N
     return comando
 
 
-def iniciar(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
-           tabelas: list[str] | None = None, forcar: bool = False,
-           rotulo: str = "extracao") -> dict:
-    """Sobe o subprocesso de extração. Recusa se já houver um rodando."""
-    global _processo, _comando, _caminho_log, _iniciado_em, _finalizado_em, _codigo_saida
+def _lancar(comando: list[str], rotulo: str, tipo: str) -> dict:
+    """
+    Sobe um subprocesso pesado. Recusa se já houver um rodando — a regra de
+    "um job pesado por vez" vale para extração E construção de silver, já que
+    ambos disputam a mesma memória (esta máquina já derrubou tudo por OOM
+    rodando os dois juntos).
+    """
+    global _processo, _comando, _caminho_log, _tipo
+    global _iniciado_em, _finalizado_em, _codigo_saida
 
     with _lock:
         if _processo is not None and _processo.poll() is None:
-            return {"ok": False, "erro": "Já existe uma extração em andamento."}
+            return {"ok": False, "erro": f"Já existe um job em andamento ({_tipo})."}
 
         DIR_LOGS_EXECUCOES.mkdir(parents=True, exist_ok=True)
-        comando = _montar_comando(dataset, ano_inicio, ano_fim, tabelas, forcar)
-
         carimbo = datetime.now().strftime("%Y%m%d_%H%M%S")
         caminho_log = DIR_LOGS_EXECUCOES / f"{carimbo}_{rotulo}.log"
 
@@ -82,11 +85,29 @@ def iniciar(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
         )
         _comando = comando
         _caminho_log = caminho_log
+        _tipo = tipo
         _iniciado_em = time.time()
         _finalizado_em = None
         _codigo_saida = None
 
         return {"ok": True, "pid": _processo.pid, "comando": " ".join(comando)}
+
+
+def iniciar(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
+           tabelas: list[str] | None = None, forcar: bool = False,
+           rotulo: str = "extracao") -> dict:
+    """Sobe o subprocesso de extração (FTP -> bronze)."""
+    comando = _montar_comando(dataset, ano_inicio, ano_fim, tabelas, forcar)
+    return _lancar(comando, rotulo, "extração")
+
+
+def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = False) -> dict:
+    """Sobe o subprocesso de construção da silver (bronze -> silver traduzida)."""
+    modulo = "silver_caged.construir_silver" if camada == "caged" else "silver_rais.construir_silver"
+    comando = [sys.executable, "-m", modulo, "--tabela", *tabelas]
+    if forcar:
+        comando.append("--forcar")
+    return _lancar(comando, f"silver-{'-'.join(tabelas)}"[:60], "silver")
 
 
 def parar() -> dict:
@@ -148,6 +169,7 @@ def status() -> dict:
 
         return {
             "rodando": rodando,
+            "tipo": _tipo,
             "pid": _processo.pid if _processo else None,
             "comando": " ".join(_comando) if _comando else None,
             "log_arquivo": caminho.name if caminho else None,

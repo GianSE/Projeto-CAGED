@@ -135,6 +135,7 @@
   .botao-play { background: var(--good); color: #ffffff; }
   .botao-stop { background: var(--critical); color: #ffffff; }
   .botao-retentar { background: var(--seq-450); color: #ffffff; padding: 6px 12px; font-size: 12.5px; }
+  .botao-silver { background: var(--seq-450); color: #ffffff; }
   .erros-topo { display: flex; align-items: center; justify-content: space-between; margin: 28px 0 12px; }
   .erros-topo h2 { margin: 0; }
   .processo-status { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); min-height: 18px; }
@@ -180,6 +181,7 @@
       </div>
       <div class="controles-botoes">
         <button id="btn-play" class="botao botao-play">▶ Iniciar extração</button>
+        <button id="btn-silver" class="botao botao-silver">🔨 Construir silver</button>
         <button id="btn-stop" class="botao botao-stop" style="display:none;">⏹ Parar</button>
       </div>
     </div>
@@ -248,15 +250,27 @@ const REFRESH_MS = {{ refresh_ms }};
 
 function fmt(n) { return n === null || n === undefined ? '–' : n.toLocaleString('pt-BR'); }
 
-function atualizarHeartbeat(hb) {
+function atualizarHeartbeat(hb, proc) {
   const box = document.getElementById('heartbeat');
   const titulo = document.getElementById('hb-titulo');
   const sub = document.getElementById('hb-sub');
   const ETAPAS = { baixando: 'Baixando do FTP', descompactando: 'Descompactando', gravando: 'Gravando no MinIO' };
 
   if (!hb) {
+    // Só a extração emite heartbeat detalhado (item atual, etapa). Outros
+    // jobs — como a construção da silver — não emitem, mas nem por isso a
+    // máquina está parada: cai para o estado do processo controlado pelo
+    // painel, senão o card diria "Ocioso" com um build rodando.
+    if (proc && proc.rodando) {
+      box.classList.remove('ocioso');
+      const decorrido = Math.round((Date.now() / 1000) - proc.iniciado_em);
+      const min = Math.floor(decorrido / 60);
+      titulo.textContent = `Construção da ${proc.tipo} em andamento`;
+      sub.textContent = `PID ${proc.pid} · há ${min >= 1 ? min + ' min' : decorrido + 's'} · acompanhe pelo log abaixo`;
+      return;
+    }
     box.classList.add('ocioso');
-    titulo.textContent = 'Ocioso — nenhuma extração rodando';
+    titulo.textContent = 'Ocioso — nenhum job rodando';
     sub.textContent = '';
     return;
   }
@@ -436,18 +450,24 @@ function atualizarProcesso(proc) {
   processoRodando = proc.rodando;
   atualizarBotaoRetentar();
 
+  const btnSilver = document.getElementById('btn-silver');
+
   if (proc.rodando) {
     btnPlay.style.display = 'none';
+    btnSilver.style.display = 'none';
     btnStop.style.display = 'inline-block';
     opcoes.querySelectorAll('input').forEach(el => el.disabled = true);
     const decorrido = Math.round((Date.now() / 1000) - proc.iniciado_em);
-    statusTxt.innerHTML = `<span style="color:var(--good); font-weight:600;">● rodando</span> — PID ${proc.pid} · há ${decorrido}s`;
+    const min = Math.floor(decorrido / 60);
+    const tempo = min >= 1 ? `${min} min` : `${decorrido}s`;
+    statusTxt.innerHTML = `<span style="color:var(--good); font-weight:600;">● ${proc.tipo || 'job'} rodando</span> — PID ${proc.pid} · há ${tempo}`;
   } else {
     btnPlay.style.display = 'inline-block';
+    btnSilver.style.display = 'inline-block';
     btnStop.style.display = 'none';
     opcoes.querySelectorAll('input').forEach(el => el.disabled = false);
     if (proc.codigo_saida === null || proc.codigo_saida === undefined) {
-      statusTxt.textContent = 'Nenhuma extração rodando.';
+      statusTxt.textContent = 'Nenhum job rodando.';
     } else if (proc.codigo_saida === 0) {
       statusTxt.innerHTML = '<span style="color:var(--good); font-weight:600;">✓ última execução concluída sem erros</span>';
     } else {
@@ -493,9 +513,24 @@ async function retentarErros() {
   atualizar();
 }
 
+async function construirSilver() {
+  // A construção é retomável (pula parquet que já existe), então re-disparar
+  // continua de onde parou em vez de refazer tudo.
+  if (!confirm('Construir a silver do CAGED?\n\nProcessa as tabelas que ainda faltam e retoma de onde parou.')) return;
+  const resp = await fetch('/api/silver/iniciar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ camada: 'caged' }),
+  });
+  const dados = await resp.json();
+  if (!dados.ok) alert(dados.erro || 'Não foi possível iniciar.');
+  atualizar();
+}
+
 document.getElementById('btn-play').addEventListener('click', iniciarExtracao);
 document.getElementById('btn-stop').addEventListener('click', pararExtracao);
 document.getElementById('btn-retentar').addEventListener('click', retentarErros);
+document.getElementById('btn-silver').addEventListener('click', construirSilver);
 
 async function atualizar() {
   try {
@@ -503,7 +538,7 @@ async function atualizar() {
     const dados = await resp.json();
     if (!dados.pronto) return;
     atualizarMinio(dados.minio);
-    atualizarHeartbeat(dados.heartbeat);
+    atualizarHeartbeat(dados.heartbeat, dados.processo);
     atualizarTabelas(dados.tabelas);
     atualizarAtividade(dados.manifesto);
     atualizarProcesso(dados.processo);

@@ -40,6 +40,12 @@ LINHAS_ATIVIDADE_RECENTE = 25
 # passar numa retentativa filtrada por --tabela (ver catalogo.py: RAIZES).
 # O manifesto guarda a tabela de destino (caged_mov, rais_vinc, ...), não o
 # dataset de origem, então esse mapa reconstrói o que falta.
+# Tabelas que cada construtor de silver aceita (espelha o --tabela de cada CLI)
+TABELAS_SILVER = {
+    "caged": ("caged_mov", "caged_for", "caged_exc", "caged_old", "caged_ajustes"),
+    "rais": ("rais_estab", "rais_vinc"),
+}
+
 TABELA_PARA_DATASET = {
     "caged_mov": "novo_caged", "caged_for": "novo_caged", "caged_exc": "novo_caged",
     "caged_old": "caged",
@@ -213,6 +219,35 @@ def api_iniciar():
 @app.route("/api/extracao/parar", methods=["POST"])
 def api_parar():
     resultado = processos.parar()
+    return jsonify(resultado), (200 if resultado["ok"] else 409)
+
+
+@app.route("/api/silver/iniciar", methods=["POST"])
+def api_silver_iniciar():
+    """
+    Constrói a silver (bronze traduzido pelos dicionários).
+
+    Sem --forcar por padrão: a construção grava um parquet por arquivo do
+    bronze e pula os que já existem, então re-disparar retoma de onde parou
+    em vez de refazer tudo.
+    """
+    corpo = request.get_json(silent=True) or {}
+    tabelas = corpo.get("tabelas") or []
+    camada = corpo.get("camada", "caged")
+    forcar = bool(corpo.get("forcar", False))
+
+    validas = TABELAS_SILVER.get(camada)
+    if validas is None:
+        return jsonify({"ok": False, "erro": f"camada inválida: {camada}"}), 400
+    if not tabelas:
+        tabelas = list(validas)
+    invalidas = [t for t in tabelas if t not in validas]
+    if invalidas:
+        return jsonify({"ok": False, "erro": f"tabela inválida para {camada}: {invalidas}"}), 400
+
+    resultado = processos.iniciar_silver(tabelas, camada=camada, forcar=forcar)
+    if resultado["ok"]:
+        resultado["tabelas"] = tabelas
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 
 
