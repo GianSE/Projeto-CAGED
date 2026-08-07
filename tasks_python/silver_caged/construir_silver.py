@@ -18,6 +18,7 @@ Uso (a partir de tasks_python, com o .venv ativo):
     python -m silver_caged.construir_silver --tabela caged_old --ano-inicio 2015
 """
 import argparse
+import re
 import sys
 import time
 
@@ -33,7 +34,7 @@ from extracao_ftp.config_extracao import (
     conectar_duckdb,
 )
 from silver_caged import mapeamento as mp
-from silver_caged.dicionarios import criar_view, existe
+from silver_caged.dicionarios import chave_normalizada, criar_view, existe
 
 # Colunas que nunca são candidatas a tradução/tipagem (linhagem e partição)
 COLUNAS_TECNICAS = {
@@ -50,6 +51,19 @@ def _fs_minio():
         secret=MINIO_SECRET_KEY,
         client_kwargs={"endpoint_url": f"http://{MINIO_ENDPOINT}", "region_name": MINIO_REGION},
     )
+
+
+def _colunas_arquivo(con, caminho_s3: str) -> list[str]:
+    """Schema de UM arquivo parquet (o schema varia entre eras do CAGED antigo)."""
+    try:
+        return [
+            r[0] for r in con.execute(
+                f"DESCRIBE SELECT * FROM read_parquet('{caminho_s3}') LIMIT 0"
+            ).fetchall()
+        ]
+    except Exception as e:
+        print(f"   ⚠️  Não consegui ler o schema de {caminho_s3}: {str(e)[:200]}")
+        return []
 
 
 def _colunas_bronze(con, tabela: str) -> list[str]:
@@ -101,7 +115,8 @@ def _mapa_traducao(con, fs, tabela: str, colunas: list[str]) -> dict[str, dict]:
     return mapa
 
 
-def _select_silver(con, fs, tabela: str, colunas: list[str]) -> str:
+def _select_silver(con, fs, tabela: str, colunas: list[str], caminho_bronze: str,
+                   silencioso: bool = False) -> str:
     geracao = mp.geracao(tabela)
     numericos = mp.NUMERICOS_NOVO_CAGED if geracao == "novo" else mp.NUMERICOS_CAGED_ANTIGO
     datas_aaaamm = mp.DATAS_AAAAMM_NOVO_CAGED if geracao == "novo" else mp.DATAS_AAAAMM_CAGED_ANTIGO
@@ -109,10 +124,11 @@ def _select_silver(con, fs, tabela: str, colunas: list[str]) -> str:
     datas_aaaamm = [c for c in datas_aaaamm if c in colunas]
 
     mapa = _mapa_traducao(con, fs, tabela, colunas)
-    if mapa:
-        print(f"   📖 {len(mapa)} coluna(s) com tradução: {', '.join(sorted(mapa))}")
-    else:
-        print("   ⚠️  Nenhuma coluna com dicionário disponível — silver sairá só tipada.")
+    if not silencioso:
+        if mapa:
+            print(f"   📖 {len(mapa)} coluna(s) com tradução: {', '.join(sorted(mapa))}")
+        else:
+            print("   ⚠️  Nenhuma coluna com dicionário disponível — silver sairá só tipada.")
 
     joins = []
     expressoes = []
@@ -136,15 +152,13 @@ def _select_silver(con, fs, tabela: str, colunas: list[str]) -> str:
             if criar_view(con, namespace, aba, estilo, nome_view, **spec):
                 # O CAGED antigo grava código curto com zero à esquerda
                 # ("02", "07"), mas o dicionário do layout traz o código sem
-                # padding ("2", "7"). Casa por valor numérico quando os dois
-                # lados são numéricos (tira o zero à esquerda e o sinal de
-                # "-1" nessa comparação); cai para igualdade de texto quando
-                # não são (códigos alfabéticos, como a seção do CNAE: A, B, C).
+                # padding ("2", "7"). A chave canônica (ver dicionarios.py)
+                # resolve isso dos dois lados e mantém a junção como
+                # igualdade simples, que o DuckDB executa via hash join.
+                chave_fato = chave_normalizada(f'b."{col}"')
                 joins.append(
-                    f'LEFT JOIN {nome_view} AS "{nome_view}" ON '
-                    f'(try_cast(trim(b."{col}") AS BIGINT) IS NOT NULL '
-                    f'  AND try_cast(trim(b."{col}") AS BIGINT) = try_cast("{nome_view}".codigo AS BIGINT)) '
-                    f'OR trim(b."{col}") = "{nome_view}".codigo'
+                    f'LEFT JOIN {nome_view} AS "{nome_view}" '
+                    f'ON {chave_fato} = "{nome_view}".codigo_norm'
                 )
                 expressoes.append(f'"{nome_view}".descricao AS "{col}_descricao"')
 
@@ -158,7 +172,6 @@ def _select_silver(con, fs, tabela: str, colunas: list[str]) -> str:
 
     select = ",\n            ".join(expressoes)
     join_sql = "\n            ".join(joins)
-    caminho_bronze = f"s3://{BUCKET_BRONZE}/{tabela}/**/*.parquet"
 
     return f"""
         SELECT
@@ -168,41 +181,82 @@ def _select_silver(con, fs, tabela: str, colunas: list[str]) -> str:
     """
 
 
-def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int) -> bool:
+def _ano_do_caminho(caminho: str) -> int | None:
+    m = re.search(r"ano=(\d{4})", caminho)
+    return int(m.group(1)) if m else None
+
+
+def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool) -> bool:
+    """
+    Constrói a silver de uma tabela, UM ARQUIVO BRONZE POR VEZ.
+
+    Processar a tabela inteira num único COPY estourava a memória (21 hash
+    tables de dicionário + dezenas de milhões de linhas > limite do DuckDB
+    nesta máquina). Arquivo a arquivo o pico de memória fica no tamanho de um
+    mês de dados, a carga vira retomável (pula o que já existe) e cada
+    arquivo pode ter seu próprio schema — o CAGED antigo muda de colunas
+    entre eras, e um COPY único sobre o glob inteiro exigiria schema uniforme.
+    """
     print(f"\n{'=' * 70}\n  🔨 SILVER: {tabela}\n{'=' * 70}")
     inicio = time.time()
 
-    colunas = _colunas_bronze(con, tabela)
-    if not colunas:
+    arquivos = sorted(fs.glob(f"{BUCKET_BRONZE}/{tabela}/**/*.parquet"))
+    if not arquivos:
         print("   ⏭️  Sem dados em bronze para esta tabela, pulando.")
         return False
 
-    query = _select_silver(con, fs, tabela, colunas)
     if ano_inicio or ano_fim:
-        query += f" WHERE ano_particao BETWEEN {ano_inicio} AND {ano_fim}"
+        arquivos = [
+            a for a in arquivos
+            if (ano := _ano_do_caminho(a)) is None or ano_inicio <= ano <= ano_fim
+        ]
 
-    destino = f"s3://{BUCKET_SILVER}/{tabela}"
-    print(f"   📤 Gravando -> {destino}  (partição ano/mês)")
+    total_linhas = 0
+    feitos = pulados = falhas = 0
+    primeiro = True
 
-    try:
-        con.execute(f"""
-            COPY ({query}) TO '{destino}' (
-                FORMAT PARQUET,
-                PARTITION_BY (ano_particao, mes_particao),
-                COMPRESSION '{PARQUET_COMPRESSION.upper()}',
-                COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL},
-                OVERWRITE_OR_IGNORE true
-            );
-        """)
-    except Exception as e:
-        print(f"   ❌ Falha ao construir a silver de {tabela}: {str(e)[:300]}")
-        return False
+    for n, origem in enumerate(arquivos, start=1):
+        destino_rel = origem.replace(f"{BUCKET_BRONZE}/", f"{BUCKET_SILVER}/", 1)
 
-    linhas = con.execute(
-        f"SELECT count(*) FROM read_parquet('{destino}/**/*.parquet')"
-    ).fetchone()[0]
-    print(f"   ✅ {linhas:,} linhas em {time.time() - inicio:.0f}s")
-    return True
+        if not forcar and fs.exists(destino_rel):
+            pulados += 1
+            continue
+
+        origem_s3 = f"s3://{origem}"
+        destino_s3 = f"s3://{destino_rel}"
+
+        colunas = _colunas_arquivo(con, origem_s3)
+        if not colunas:
+            falhas += 1
+            continue
+
+        # O mapa de tradução é o mesmo para todos os arquivos da tabela;
+        # imprime só na primeira vez para não poluir o log com 156 repetições.
+        query = _select_silver(con, fs, tabela, colunas, origem_s3, silencioso=not primeiro)
+        primeiro = False
+
+        try:
+            con.execute(f"""
+                COPY ({query}) TO '{destino_s3}' (
+                    FORMAT PARQUET,
+                    COMPRESSION '{PARQUET_COMPRESSION.upper()}',
+                    COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL}
+                );
+            """)
+            linhas = con.execute(
+                f"SELECT count(*) FROM read_parquet('{destino_s3}')"
+            ).fetchone()[0]
+            total_linhas += linhas
+            feitos += 1
+            print(f"   [{n}/{len(arquivos)}] ✅ {origem.split('/')[-1]}: {linhas:,} linhas")
+        except Exception as e:
+            falhas += 1
+            print(f"   [{n}/{len(arquivos)}] ❌ {origem.split('/')[-1]}: {str(e)[:200]}")
+
+    decorrido = time.time() - inicio
+    print(f"   📊 {feitos} gravado(s), {pulados} já existente(s), {falhas} falha(s) "
+          f"| {total_linhas:,} linhas novas em {decorrido / 60:.1f} min")
+    return falhas == 0
 
 
 def _argumentos():
@@ -211,6 +265,8 @@ def _argumentos():
     p.add_argument("--ano-inicio", type=int, default=0)
     p.add_argument("--ano-fim", type=int, default=9999)
     p.add_argument("--listar", action="store_true", help="Só mostra o mapeamento de tradução e sai")
+    p.add_argument("--forcar", action="store_true",
+                   help="Reprocessa arquivos que já existem na silver (padrão: pula)")
     return p.parse_args()
 
 
@@ -237,7 +293,7 @@ def main() -> int:
 
     sucesso = 0
     for tabela in args.tabela:
-        if construir(con, fs, tabela, args.ano_inicio, args.ano_fim):
+        if construir(con, fs, tabela, args.ano_inicio, args.ano_fim, args.forcar):
             sucesso += 1
 
     print(f"\n🏁 {sucesso}/{len(args.tabela)} tabela(s) construída(s) na silver.")

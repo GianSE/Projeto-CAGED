@@ -168,9 +168,25 @@ def _sql_titulo_codigo(caminho: str, col_desc: str = "col_00", col_cod: str = "c
     """
 
 
+# Chave de junção canônica: código numérico vira o número sem zero à esquerda
+# ("07" e "7" viram ambos "7"); código não-numérico fica como texto limpo
+# ("A" da seção CNAE). Aplicada IDÊNTICA nos dois lados do JOIN, o que
+# transforma a junção em igualdade simples — e igualdade simples o DuckDB
+# resolve com hash join. A versão anterior comparava com um OR de duas
+# condições, o que forçava nested loop: ~640 s para 2,6 M linhas, inviável
+# para as ~390 M linhas do caged_old completo.
+SQL_CHAVE_NORMALIZADA = "coalesce(try_cast(trim({expr}) AS BIGINT)::VARCHAR, trim({expr}))"
+
+
+def chave_normalizada(expr: str) -> str:
+    """Devolve o SQL da chave canônica para uma expressão (coluna do fato ou do dicionário)."""
+    return SQL_CHAVE_NORMALIZADA.format(expr=expr)
+
+
 def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str, **kwargs) -> bool:
     """
-    Cria (ou substitui) uma VIEW temporária (codigo, descricao) no DuckDB.
+    Cria (ou substitui) uma VIEW temporária no DuckDB com as colunas
+    (codigo, descricao, codigo_norm).
 
     Devolve False sem lançar exceção se o parquet não existir ou vier vazio —
     a silver deve seguir sem tradução para essa coluna, não travar por isso.
@@ -190,8 +206,23 @@ def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str, **kwa
     else:
         raise ValueError(f"estilo de dicionário desconhecido: {estilo}")
 
+    # Uma linha por chave canônica. Sem isso, um dicionário que traga "1" e
+    # "01" como entradas separadas casaria DUAS vezes com o mesmo registro do
+    # fato e multiplicaria silenciosamente as linhas da silver. min() só para
+    # ser determinístico: quando há duplicata, as descrições são a mesma
+    # categoria escrita de formas ligeiramente diferentes.
+    sql_normalizado = f"""
+        SELECT
+            {chave_normalizada('codigo')} AS codigo_norm,
+            min(codigo)    AS codigo,
+            min(descricao) AS descricao
+        FROM ({sql})
+        WHERE codigo IS NOT NULL
+        GROUP BY 1
+    """
+
     try:
-        con.execute(f"CREATE OR REPLACE TEMP VIEW {nome_view} AS {sql};")
+        con.execute(f"CREATE OR REPLACE TEMP VIEW {nome_view} AS {sql_normalizado};")
         total = con.execute(f"SELECT count(*) FROM {nome_view}").fetchone()[0]
         return total > 0
     except Exception as e:

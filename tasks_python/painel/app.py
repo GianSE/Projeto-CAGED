@@ -86,35 +86,51 @@ def _contar_parquets(fs, bucket: str, tabela: str) -> int:
         return 0
 
 
+def _chave_item(row: dict) -> tuple:
+    """Identifica o mesmo item ao longo de reprocessamentos (retentativas)."""
+    return (row.get("tabela"), row.get("arquivo_fonte"))
+
+
 def _ler_manifesto() -> dict:
     """
     Lê o manifesto inteiro (é o registro permanente de tudo que a extração já
-    processou, nunca é apagado). Devolve tanto os últimos N itens (atividade
-    recente, mistura ok/erro) quanto TODOS os erros — os erros somem da lista
-    "recente" assim que itens ok subsequentes empurram eles pra fora das
-    últimas N linhas, mas continuam precisando aparecer em algum lugar pra
-    dar pra tratar depois.
+    processou, nunca é apagado — é append-only, um reprocessamento soma uma
+    linha nova, não substitui a antiga).
+
+    "recentes" mostra o histórico bruto, na ordem em que aconteceu (útil para
+    ver "isso falhou, depois foi retentado e deu certo" ao longo do tempo).
+
+    "erros" e as contagens ok/erro, por outro lado, refletem o ESTADO ATUAL:
+    se um item falhou e depois foi retentado com sucesso, só a última linha
+    dele conta — ele some da lista de erros e passa a contar como ok, mesmo
+    a linha de erro antiga continuando no arquivo para auditoria.
     """
     caminho = DIR_LOGS / "manifesto_extracao.csv"
     linhas: list[dict] = []
-    erros: list[dict] = []
 
     if caminho.exists():
         try:
             with open(caminho, newline="", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
-                    linhas.append(row)
-                    if row.get("status") == "erro":
-                        erros.append(row)
+                linhas = list(csv.DictReader(f))
         except Exception:
             pass
 
+    # O arquivo é cronológico (append-only) -> a última ocorrência de cada
+    # chave sobrescreve as anteriores no dict, sobrando só o estado atual.
+    ultimo_por_item: dict[tuple, dict] = {}
+    for row in linhas:
+        ultimo_por_item[_chave_item(row)] = row
+
+    erros_atuais = [row for row in ultimo_por_item.values() if row.get("status") == "erro"]
+    ok_atuais = len(ultimo_por_item) - len(erros_atuais)
+    erros_atuais.sort(key=lambda r: r.get("data_hora", ""), reverse=True)
+
     return {
-        "total": len(linhas),
-        "ok": len(linhas) - len(erros),
-        "erro": len(erros),
+        "total": len(ultimo_por_item),
+        "ok": ok_atuais,
+        "erro": len(erros_atuais),
         "recentes": list(reversed(linhas[-LINHAS_ATIVIDADE_RECENTE:])),
-        "erros": list(reversed(erros)),
+        "erros": erros_atuais,
     }
 
 

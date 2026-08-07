@@ -30,7 +30,7 @@ from extracao_ftp.config_extracao import (
     PARQUET_COMPRESSION_LEVEL,
     conectar_duckdb,
 )
-from silver_caged.dicionarios import criar_view, existe
+from silver_caged.dicionarios import chave_normalizada, criar_view, existe
 from silver_rais import mapeamento as mp
 
 COLUNAS_TECNICAS = {
@@ -107,11 +107,10 @@ def _select_silver(fs, con, tabela: str, colunas: list[str]) -> str:
             namespace, aba, estilo = spec.pop("namespace"), spec.pop("aba"), spec.pop("estilo")
             nome_view = f"dic_{tabela}_{col}"
             if criar_view(con, namespace, aba, estilo, nome_view, **spec):
+                chave_fato = chave_normalizada(f'b."{col}"')
                 joins.append(
-                    f'LEFT JOIN {nome_view} AS "{nome_view}" ON '
-                    f'(try_cast(trim(b."{col}") AS BIGINT) IS NOT NULL '
-                    f'  AND try_cast(trim(b."{col}") AS BIGINT) = try_cast("{nome_view}".codigo AS BIGINT)) '
-                    f'OR trim(b."{col}") = "{nome_view}".codigo'
+                    f'LEFT JOIN {nome_view} AS "{nome_view}" '
+                    f'ON {chave_fato} = "{nome_view}".codigo_norm'
                 )
                 expressoes.append(f'"{nome_view}".descricao AS "{col}_descricao"')
 
