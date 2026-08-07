@@ -8,11 +8,20 @@ agregações ficam em dados.py, cacheadas pelo Streamlit.
 Rodar (a partir de tasks_python):
     ..\\.venv\\Scripts\\streamlit run dashboard/app.py
 """
-import plotly.graph_objects as go
-import streamlit as st
+import sys
+from pathlib import Path
 
-from dashboard import dados, tema
-from dashboard.tema import fmt_compacto, fmt_num, fmt_reais
+# `streamlit run dashboard/app.py` coloca no sys.path a pasta DO SCRIPT
+# (dashboard/), não a raiz do projeto — diferente de `python -m`, que usa o
+# diretório atual. Sem isto, `from dashboard import ...` e o `extracao_ftp`
+# usado em dados.py não são encontrados, independente de onde se chame.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import plotly.graph_objects as go  # noqa: E402
+import streamlit as st  # noqa: E402
+
+from dashboard import dados, tema  # noqa: E402
+from dashboard.tema import fmt_compacto, fmt_num, fmt_reais  # noqa: E402
 
 st.set_page_config(page_title="Mercado de Trabalho em TI — CAGED",
                    page_icon="💻", layout="wide")
@@ -103,7 +112,7 @@ if not mensal_f.empty:
     lay = tema.layout_base(altura=300, mostrar_legenda=False)
     lay["yaxis"]["title"] = "vagas (líquido)"
     fig.update_layout(**lay)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.subheader("Fluxo bruto e salário de contratação")
     g1, g2 = st.columns([3, 2])
@@ -117,7 +126,7 @@ if not mensal_f.empty:
                        name="Desligamentos", line=dict(color=tema.COR_DESLIGAMENTO, width=2),
                        hovertemplate="%{x|%b/%Y}<br>Desligamentos: %{y:,.0f}<extra></extra>")
         f2.update_layout(**tema.layout_base(altura=300))
-        st.plotly_chart(f2, use_container_width=True)
+        st.plotly_chart(f2, width='stretch')
 
     with g2:
         f3 = go.Figure(go.Scatter(
@@ -128,7 +137,7 @@ if not mensal_f.empty:
         lay3 = tema.layout_base(altura=300, mostrar_legenda=False)
         lay3["yaxis"]["title"] = "R$ na admissão"
         f3.update_layout(**lay3)
-        st.plotly_chart(f3, use_container_width=True)
+        st.plotly_chart(f3, width='stretch')
 
 st.divider()
 
@@ -156,7 +165,7 @@ if not lentes.empty:
         lay4 = tema.layout_base(altura=260, mostrar_legenda=False)
         lay4["margin"]["l"] = 280
         f4.update_layout(**lay4)
-        st.plotly_chart(f4, use_container_width=True)
+        st.plotly_chart(f4, width='stretch')
 
     with l2:
         prof_ti = resumo[resumo["categoria"].str.startswith("Profissional de TI")]
@@ -184,7 +193,7 @@ if not lentes.empty:
         tabela["Salário médio"] = tabela["salario"].map(fmt_reais)
         st.dataframe(tabela[["setor_empresa", "Admissões", "Saldo", "Salário médio"]]
                      .rename(columns={"setor_empresa": "Setor da empresa"}),
-                     use_container_width=True, hide_index=True)
+                     width='stretch', hide_index=True)
 
 st.divider()
 
@@ -204,7 +213,7 @@ with col_a:
         lay5 = tema.layout_base(altura=420, mostrar_legenda=False)
         lay5["margin"]["l"] = 130
         f5.update_layout(**lay5)
-        st.plotly_chart(f5, use_container_width=True)
+        st.plotly_chart(f5, width='stretch')
 
 with col_b:
     st.subheader("Ocupações de TI com maior saldo")
@@ -225,7 +234,7 @@ with col_b:
         lay6 = tema.layout_base(altura=420, mostrar_legenda=False)
         lay6["margin"]["l"] = 250
         f6.update_layout(**lay6)
-        st.plotly_chart(f6, use_container_width=True)
+        st.plotly_chart(f6, width='stretch')
 
 st.divider()
 
@@ -250,7 +259,7 @@ if not demo.empty:
         lay["margin"]["l"] = 160
         fig.update_layout(**lay)
         alvo.markdown(f"**{titulo}**")
-        alvo.plotly_chart(fig, use_container_width=True)
+        alvo.plotly_chart(fig, width='stretch')
 
     barra("sexo", "Por sexo", d1, tema.SERIE_1)
     barra("raca_cor", "Por raça/cor", d2, tema.SERIE_3)
@@ -265,7 +274,7 @@ if not demo.empty:
     sal["Salário médio"] = sal["salario"].map(fmt_reais)
     st.dataframe(sal[["escolaridade", "Admissões", "Salário médio"]]
                  .rename(columns={"escolaridade": "Escolaridade"}),
-                 use_container_width=True, hide_index=True)
+                 width='stretch', hide_index=True)
 
 st.markdown(
     '<div class="rodape">'
