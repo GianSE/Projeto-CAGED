@@ -3,13 +3,27 @@ Constrói a camada silver do CAGED a partir da bronze + dicionários.
 
 Para cada tabela (caged_mov, caged_for, caged_exc, caged_old, caged_ajustes):
 
-  1. Lê todo o bronze da tabela (glob com particionamento Hive).
+  1. Filtra o recorte de TECNOLOGIA (ver gold_caged/escopo_tecnologia.py).
   2. Para cada coluna codificada com dicionário disponível, faz LEFT JOIN e
      acrescenta uma coluna "<coluna>_descricao" com o texto legível — o código
      original é mantido, nada é substituído.
   3. Tipa os campos numéricos (vírgula decimal -> ponto, cast) e monta uma
      coluna de data a partir da competência AAAAMM.
-  4. Grava em s3://silver/<tabela>, particionado por ano/mês, ZSTD-3.
+  4. Grava um parquet por arquivo do bronze em s3://silver/<tabela>, ZSTD-3.
+
+RECORTE DE TECNOLOGIA (padrão)
+------------------------------
+O estudo é sobre o mercado de trabalho em tecnologia, e TI é ~1% dos
+registros: gravar o mercado inteiro custaria ~100x mais espaço em disco para
+dados que nunca seriam consultados — decisivo na RAIS, que sozinha passaria
+de 60 GB.
+
+O que NÃO se perde: o bronze continua completo (é a fonte da verdade, dá para
+re-derivar com outra definição de TI a qualquer momento) e a linha de base do
+mercado geral vem dos agregados da gold, calculados direto do bronze. Sem
+essa linha de base, "TI cresceu 8%" não significaria nada.
+
+Use --mercado-completo para gravar tudo.
 
 Uso (a partir de tasks_python, com o .venv ativo):
 
@@ -34,6 +48,7 @@ from extracao_ftp.config_extracao import (
     conectar_duckdb,
 )
 from silver_caged import mapeamento as mp
+from gold_caged import escopo_tecnologia as esc
 from silver_caged.dicionarios import chave_normalizada, criar_view, existe
 
 # Colunas que nunca são candidatas a tradução/tipagem (linhagem e partição)
@@ -116,7 +131,7 @@ def _mapa_traducao(con, fs, tabela: str, colunas: list[str]) -> dict[str, dict]:
 
 
 def _select_silver(con, fs, tabela: str, colunas: list[str], caminho_bronze: str,
-                   silencioso: bool = False) -> str:
+                   silencioso: bool = False, so_tecnologia: bool = False) -> str:
     geracao = mp.geracao(tabela)
     numericos = mp.NUMERICOS_NOVO_CAGED if geracao == "novo" else mp.NUMERICOS_CAGED_ANTIGO
     datas_aaaamm = mp.DATAS_AAAAMM_NOVO_CAGED if geracao == "novo" else mp.DATAS_AAAAMM_CAGED_ANTIGO
@@ -173,10 +188,27 @@ def _select_silver(con, fs, tabela: str, colunas: list[str], caminho_bronze: str
     select = ",\n            ".join(expressoes)
     join_sql = "\n            ".join(joins)
 
+    # Recorte de tecnologia aplicado JÁ NA LEITURA do bronze: o predicado
+    # entra antes dos LEFT JOINs de dicionário, então o DuckDB descarta ~99%
+    # das linhas antes de traduzir qualquer coisa. Filtrar depois traduziria
+    # 725 milhões de linhas para jogar fora quase todas.
+    where = ""
+    if so_tecnologia:
+        col_cnae, col_cbo = esc.colunas_da_tabela(tabela, colunas)
+        predicado = esc.sql_filtro_tecnologia(
+            f'b."{col_cnae}"' if col_cnae else None,
+            f'b."{col_cbo}"' if col_cbo else None,
+        )
+        if predicado:
+            where = f"WHERE {predicado}"
+        else:
+            print(f"      ⚠️  {tabela}: sem coluna de CNAE/CBO neste arquivo — "
+                  f"gravando sem recorte de tecnologia")
+
     return f"""
         SELECT
             {select}
-        FROM read_parquet('{caminho_bronze}') AS b
+        FROM (SELECT * FROM read_parquet('{caminho_bronze}') AS b {where}) AS b
         {join_sql}
     """
 
@@ -186,7 +218,8 @@ def _ano_do_caminho(caminho: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool) -> bool:
+def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
+              so_tecnologia: bool = False) -> bool:
     """
     Constrói a silver de uma tabela, UM ARQUIVO BRONZE POR VEZ.
 
@@ -232,7 +265,8 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool)
 
         # O mapa de tradução é o mesmo para todos os arquivos da tabela;
         # imprime só na primeira vez para não poluir o log com 156 repetições.
-        query = _select_silver(con, fs, tabela, colunas, origem_s3, silencioso=not primeiro)
+        query = _select_silver(con, fs, tabela, colunas, origem_s3,
+                               silencioso=not primeiro, so_tecnologia=so_tecnologia)
         primeiro = False
 
         try:
@@ -267,6 +301,10 @@ def _argumentos():
     p.add_argument("--listar", action="store_true", help="Só mostra o mapeamento de tradução e sai")
     p.add_argument("--forcar", action="store_true",
                    help="Reprocessa arquivos que já existem na silver (padrão: pula)")
+    p.add_argument("--mercado-completo", action="store_true",
+                   help="Grava TODO o mercado em vez de só tecnologia (padrão: só TI). "
+                        "O mercado completo ocupa ~100x mais espaço; a linha de base "
+                        "para comparação vem dos agregados da gold, calculados do bronze.")
     return p.parse_args()
 
 
@@ -293,7 +331,8 @@ def main() -> int:
 
     sucesso = 0
     for tabela in args.tabela:
-        if construir(con, fs, tabela, args.ano_inicio, args.ano_fim, args.forcar):
+        if construir(con, fs, tabela, args.ano_inicio, args.ano_fim, args.forcar,
+                     so_tecnologia=not args.mercado_completo):
             sucesso += 1
 
     print(f"\n🏁 {sucesso}/{len(args.tabela)} tabela(s) construída(s) na silver.")

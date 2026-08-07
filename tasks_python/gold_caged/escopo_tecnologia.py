@@ -75,6 +75,51 @@ CBO_AVULSOS_TI = {
 }
 
 
+# As colunas de CNAE e CBO mudam de nome entre as gerações do CAGED e na
+# RAIS. O recorte é o mesmo; só o nome do campo muda.
+COLUNAS_POR_TABELA = {
+    "caged_mov": ("subclasse", "cbo2002ocupacao"),
+    "caged_for": ("subclasse", "cbo2002ocupacao"),
+    "caged_exc": ("subclasse", "cbo2002ocupacao"),
+    "caged_old": ("cnae_20_subclas", "cbo_2002_ocupacao"),
+    "caged_ajustes": ("cnae_20_subclas", "cbo_2002_ocupacao"),
+}
+
+
+def colunas_da_tabela(tabela: str, colunas_existentes: list[str]) -> tuple[str | None, str | None]:
+    """
+    Descobre como CNAE e CBO se chamam nesta tabela.
+
+    Devolve None para o que não existir no arquivo: o CAGED antigo dos
+    primeiros anos não traz CNAE 2.0 (só a 1.0), e nesse caso o recorte cai
+    para a ocupação apenas — melhor perder a lente de setor num ano do que
+    derrubar a ingestão inteira.
+    """
+    cnae, cbo = COLUNAS_POR_TABELA.get(tabela, ("subclasse", "cbo2002ocupacao"))
+    return (cnae if cnae in colunas_existentes else None,
+            cbo if cbo in colunas_existentes else None)
+
+
+def sql_filtro_tecnologia(col_cnae: str | None, col_cbo: str | None) -> str | None:
+    """
+    Predicado do recorte: fica a movimentação que for de SETOR de TI OU de
+    OCUPAÇÃO de TI. A união das duas lentes é o que preserva, dentro do
+    recorte, tanto o dev do banco quanto a recepcionista da software house —
+    permitindo comparar as duas leituras depois, na gold.
+
+    None quando nenhuma das colunas existe: sem elas não há como recortar, e
+    a decisão de o que fazer cabe a quem chamou.
+    """
+    partes = []
+    if col_cnae:
+        partes.append(sql_filtro_cnae(col_cnae))
+    if col_cbo:
+        partes.append(sql_filtro_cbo(col_cbo))
+    if not partes:
+        return None
+    return "(" + " OR ".join(partes) + ")"
+
+
 def sql_filtro_cnae(coluna: str = "subclasse") -> str:
     """Predicado SQL do setor de TI."""
     lista = ", ".join(f"'{c}'" for c in CNAE_TI)
