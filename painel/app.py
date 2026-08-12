@@ -27,6 +27,7 @@ from extracao_ftp.catalogo import DATASETS
 from extracao_ftp.config_extracao import (
     BUCKET_BRONZE,
     BUCKET_SILVER,
+    BUCKET_SILVER_TI,
     DIR_LOGS,
     MINIO_ACCESS_KEY,
     MINIO_ENDPOINT,
@@ -309,7 +310,7 @@ def _montar_status() -> dict:
     minio = _checar_minio(fs)
 
     tabelas_bronze = set(_listar_tabelas(fs, BUCKET_BRONZE)) | set(TOTAIS_BRONZE)
-    tabelas_silver = set(_listar_tabelas(fs, BUCKET_SILVER))
+    tabelas_silver = set(_listar_tabelas(fs, BUCKET_SILVER_TI))
 
     manifesto = _ler_manifesto()
     por_tabela = manifesto["por_tabela"]
@@ -318,7 +319,10 @@ def _montar_status() -> dict:
     for nome in sorted(tabelas_bronze | tabelas_silver):
         caminhos_bronze = _listar_parquets(fs, BUCKET_BRONZE, nome) if minio["ok"] else []
         n_bronze = len(caminhos_bronze)
-        n_silver = _contar_parquets(fs, BUCKET_SILVER, nome) if minio["ok"] else 0
+        # A silver principal do estudo é a de TI; o mercado completo é
+        # opcional e aparece numa coluna própria.
+        n_silver = _contar_parquets(fs, BUCKET_SILVER_TI, nome) if minio["ok"] else 0
+        n_silver_full = _contar_parquets(fs, BUCKET_SILVER, nome) if minio["ok"] else 0
         esperado = TOTAIS_BRONZE.get(nome)
         pct = min(100, round(n_bronze / esperado * 100)) if esperado else None
         # A silver grava um parquet por arquivo do bronze, então o próprio
@@ -327,7 +331,7 @@ def _montar_status() -> dict:
         pct_silver = min(100, round(n_silver / n_bronze * 100)) if n_bronze else None
         agg = por_tabela.get(nome, {})
         linhas_bronze = _linhas_parquet(BUCKET_BRONZE, nome, n_bronze) if minio["ok"] else None
-        linhas_silver = _linhas_parquet(BUCKET_SILVER, nome, n_silver) if minio["ok"] else None
+        linhas_silver = _linhas_parquet(BUCKET_SILVER_TI, nome, n_silver) if minio["ok"] else None
         # Com a silver recortada em tecnologia, a razão entre as duas é a
         # própria fatia de TI no mercado — a leitura mais informativa do card.
         pct_ti = (round(linhas_silver / linhas_bronze * 100, 2)
@@ -338,6 +342,7 @@ def _montar_status() -> dict:
             "bronze_esperado": esperado,
             "pct_bronze": pct,
             "silver": n_silver,
+            "silver_completo": n_silver_full,
             "silver_esperado": n_bronze,
             "pct_silver": pct_silver,
             "tem_silver": n_silver > 0,

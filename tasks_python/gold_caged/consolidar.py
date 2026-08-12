@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 from extracao_ftp.config_extracao import (
-    BUCKET_SILVER,
+    BUCKET_SILVER_TI,
     PARQUET_COMPRESSION,
     PARQUET_COMPRESSION_LEVEL,
     conectar_duckdb,
@@ -50,7 +50,7 @@ TAMANHO_ROW_GROUP = 50_000
 
 
 def consolidar(con, tabela: str) -> bool:
-    origem = f"s3://{BUCKET_SILVER}/{tabela}/**/*.parquet"
+    origem = f"s3://{BUCKET_SILVER_TI}/{tabela}/**/*.parquet"
     destino = DIR_SAIDA / f"{tabela}.parquet"
 
     try:

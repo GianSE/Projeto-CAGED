@@ -28,6 +28,26 @@ BUCKET_BRONZE = os.getenv("BUCKET_BRONZE", "bronze")
 BUCKET_SILVER = os.getenv("BUCKET_SILVER", "silver")
 BUCKET_GOLD = os.getenv("BUCKET_GOLD", "gold")
 
+# A silver existe em DOIS recortes, em buckets separados:
+#
+#   silver_ti  — só tecnologia (~1% das linhas). É a base do estudo e a que
+#                vai publicada; cabe em centenas de MB.
+#   silver     — mercado inteiro traduzido. Mesmo tratamento, sem o filtro;
+#                ordens de grandeza maior (dezenas de GB).
+#
+# São buckets e não prefixos dentro do mesmo bucket para que um glob
+# `silver_ti/**` nunca alcance o mercado completo por engano — misturar os
+# dois numa consulta contaria as linhas de TI duas vezes.
+#
+# Com hífen, não underscore: nome de bucket S3 só aceita letras minúsculas,
+# números, hífen e ponto — "silver_ti" é rejeitado com InvalidBucketName.
+BUCKET_SILVER_TI = os.getenv("BUCKET_SILVER_TI", "silver-ti")
+
+
+def bucket_silver(so_tecnologia: bool = True) -> str:
+    """Bucket de destino/leitura conforme o recorte."""
+    return BUCKET_SILVER_TI if so_tecnologia else BUCKET_SILVER
+
 # Opções no formato aceito por s3fs / polars storage_options
 S3_STORAGE_OPTIONS = {
     "aws_access_key_id": MINIO_CONFIG["access_key"],

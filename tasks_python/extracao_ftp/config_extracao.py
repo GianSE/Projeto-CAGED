@@ -12,6 +12,8 @@ from _settings.config import (  # noqa: F401  (re-exportados de propósito)
     BUCKET_BRONZE,
     BUCKET_GOLD,
     BUCKET_SILVER,
+    BUCKET_SILVER_TI,
+    bucket_silver,
     FTP_CONFIG,
     MINIO_CONFIG,
     PARQUET_COMPRESSION,

@@ -83,6 +83,13 @@ COLUNAS_POR_TABELA = {
     "caged_exc": ("subclasse", "cbo2002ocupacao"),
     "caged_old": ("cnae_20_subclas", "cbo_2002_ocupacao"),
     "caged_ajustes": ("cnae_20_subclas", "cbo_2002_ocupacao"),
+    # RAIS: nomes conferidos no bronze. Cobertura verificada em 100% desde
+    # 2007 para as duas colunas — é o que sustenta o recorte começar nesse ano
+    # (antes disso vigoravam CNAE 1.0 e CBO 1994, taxonomias diferentes).
+    "rais_vinc": ("cnae_20_subclasse", "cbo_ocupacao_2002"),
+    # O estabelecimento não tem ocupação: uma empresa não exerce CBO. Aqui o
+    # recorte é necessariamente só pelo setor.
+    "rais_estab": ("cnae_20_subclasse", None),
 }
 
 

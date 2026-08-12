@@ -43,14 +43,14 @@ import time
 
 from extracao_ftp.config_extracao import (
     BUCKET_GOLD,
-    BUCKET_SILVER,
+    BUCKET_SILVER_TI,
     PARQUET_COMPRESSION,
     PARQUET_COMPRESSION_LEVEL,
     conectar_duckdb,
 )
 from gold_caged import escopo_tecnologia as esc
 
-FONTE = f"s3://{BUCKET_SILVER}/caged_mov/**/*.parquet"
+FONTE = f"s3://{BUCKET_SILVER_TI}/caged_mov/**/*.parquet"
 
 # Cada linha da silver é rotulada nas duas lentes de tecnologia (setor por
 # CNAE, ocupação por CBO — ver escopo_tecnologia.py). Rotular em vez de

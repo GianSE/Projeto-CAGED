@@ -39,6 +39,7 @@ import time
 from extracao_ftp.config_extracao import (
     BUCKET_BRONZE,
     BUCKET_SILVER,
+    bucket_silver,
     MINIO_ACCESS_KEY,
     MINIO_ENDPOINT,
     MINIO_REGION,
@@ -230,7 +231,12 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
     arquivo pode ter seu próprio schema — o CAGED antigo muda de colunas
     entre eras, e um COPY único sobre o glob inteiro exigiria schema uniforme.
     """
-    print(f"\n{'=' * 70}\n  🔨 SILVER: {tabela}\n{'=' * 70}")
+    # Cada recorte tem seu próprio bucket: os dois podem coexistir sem que um
+    # glob alcance o outro por engano.
+    bucket_destino = bucket_silver(so_tecnologia)
+    recorte = "só tecnologia" if so_tecnologia else "mercado completo"
+
+    print(f"\n{'=' * 70}\n  🔨 SILVER: {tabela}  ({recorte} → {bucket_destino})\n{'=' * 70}")
     inicio = time.time()
 
     arquivos = sorted(fs.glob(f"{BUCKET_BRONZE}/{tabela}/**/*.parquet"))
@@ -249,7 +255,7 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
     primeiro = True
 
     for n, origem in enumerate(arquivos, start=1):
-        destino_rel = origem.replace(f"{BUCKET_BRONZE}/", f"{BUCKET_SILVER}/", 1)
+        destino_rel = origem.replace(f"{BUCKET_BRONZE}/", f"{bucket_destino}/", 1)
 
         if not forcar and fs.exists(destino_rel):
             pulados += 1

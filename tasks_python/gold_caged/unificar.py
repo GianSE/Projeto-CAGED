@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 from extracao_ftp.config_extracao import (
-    BUCKET_SILVER,
+    BUCKET_SILVER_TI,
     PARQUET_COMPRESSION,
     PARQUET_COMPRESSION_LEVEL,
     conectar_duckdb,
@@ -42,8 +42,8 @@ TAMANHO_ROW_GROUP = 50_000
 
 
 def sql_unificado() -> str:
-    mov = f"s3://{BUCKET_SILVER}/caged_mov/**/*.parquet"
-    old = f"s3://{BUCKET_SILVER}/caged_old/**/*.parquet"
+    mov = f"s3://{BUCKET_SILVER_TI}/caged_mov/**/*.parquet"
+    old = f"s3://{BUCKET_SILVER_TI}/caged_old/**/*.parquet"
 
     return f"""
         SELECT

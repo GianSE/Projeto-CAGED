@@ -24,7 +24,7 @@ import pandas as pd
 import streamlit as st
 
 from extracao_ftp.config_extracao import (
-    BUCKET_SILVER,
+    BUCKET_SILVER_TI,
     MINIO_ACCESS_KEY,
     MINIO_ENDPOINT,
     MINIO_REGION,
@@ -46,7 +46,7 @@ URL_BASE = os.getenv("DADOS_URL_BASE", "").rstrip("/")
 
 def _caminho(tabela: str) -> str:
     return (f"{URL_BASE}/{tabela}.parquet" if URL_BASE
-            else f"s3://{BUCKET_SILVER}/{tabela}/**/*.parquet")
+            else f"s3://{BUCKET_SILVER_TI}/{tabela}/**/*.parquet")
 
 
 FONTE = _caminho("caged_mov")
