@@ -87,14 +87,14 @@ encoding detectado — e tenta de novo. O caminho caro só é pago quando necess
 
 ## Uso
 
-O MinIO roda em container (`docker compose -f worker/docker-compose.yml up -d minio minio-init`),
-mas a extração em si roda no host, via `.venv` — não precisa do container `worker`
-nem de 7-Zip instalado (sem o binário `7z`, o `extrator.py` cai para `py7zr`,
-puro Python).
+O MinIO roda em container (`docker compose -f minio/docker-compose.yml up -d`),
+mas a extração em si roda no host, via `.venv` — sem container nenhum e sem
+exigir 7-Zip instalado (na falta do binário `7z`, o `extrator.py` cai para o
+`py7zr`, puro Python).
 
 ```bash
 python -m venv .venv
-.venv\Scripts\pip install -r worker/requirements.txt
+.venv\Scripts\pip install -r requirements-pipeline.txt
 ```
 
 A partir da pasta `tasks_python`:

@@ -1,0 +1,39 @@
+# Dependências do PIPELINE local: extração FTP, silver, gold, painel e
+# publicação do dataset. Instale no .venv da raiz:
+#
+#     python -m venv .venv
+#     .venv\Scripts\pip install -r requirements-pipeline.txt
+#
+# O requirements.txt da raiz é OUTRO arquivo, de propósito: ele lista só o que
+# o dashboard publicado precisa, porque é dele que o Streamlit Cloud instala.
+# Mandar py7zr, boto3 e flask para a nuvem só faria o deploy demorar mais e
+# ter mais superfície para falhar.
+
+# --- núcleo: leitura/escrita de parquet e acesso ao MinIO ---
+duckdb
+pyarrow
+pandas
+s3fs
+boto3
+python-dotenv
+
+# --- extração do FTP do MTE ---
+# py7zr é fallback: quando o binário 7-Zip existe, ele é preferido por ser
+# tolerante a CRC inválido — vários .7z do MTE vêm corrompidos.
+py7zr
+
+# --- planilhas de layout/dicionário do MTE ---
+openpyxl   # .xlsx
+xlrd       # .xls antigo
+lxml       # alguns ".xls" são HTML disfarçado; pd.read_html precisa dele
+
+# --- painel de observabilidade (tasks_python/painel) ---
+flask
+psutil     # readoção do job ativo após restart do painel
+
+# --- dashboard analítico (tasks_python/dashboard) ---
+streamlit
+plotly
+
+# --- publicação do dataset (tasks_python/gold_caged/publicar_hf.py) ---
+huggingface_hub

@@ -1,6 +1,0 @@
-__pycache__
-.gitignore
-README.md
-Setup_hook.py
-.github
-*.duckdb

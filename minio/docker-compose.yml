@@ -35,25 +35,3 @@ services:
       echo 'Buckets prontos: bronze, silver, gold';
       "
 
-  worker:
-    image: custom-worker:3.6.13-python3.12
-    build:
-      context: ..
-      dockerfile: worker/Dockerfile
-    restart: always
-    depends_on:
-      minio:
-        condition: service_healthy
-    volumes:
-      - ../:/app
-      - C:/deploy_metadata:/app/_metadata
-      # Área de staging da extração FTP (download + descompactação temporária)
-      - "C:/staging_mtps:/staging"
-    environment:
-      - PYTHONPATH=/app:/app/flows_prefect:/app/tasks_python
-      # Dentro da rede do compose o MinIO responde pelo nome do serviço
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
-      - MINIO_REGION=${MINIO_REGION:-us-east-1}
-      - STAGING_DIR=/staging
