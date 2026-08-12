@@ -1,0 +1,15 @@
+# Dependências do PAINEL de observabilidade.
+#
+#     cd painel
+#     python -m venv .venv
+#     .venv\Scripts\pip install -r requirements.txt
+#     .venv\Scripts\python -m painel.app      (rodar a partir da RAIZ do projeto)
+#
+# O painel NÃO precisa das dependências dos jobs pesados (py7zr, pyarrow,
+# openpyxl...): ele só observa o lake e dispara os jobs em subprocessos, que
+# rodam no .venv da raiz. Ver PYTHON_JOBS em processos.py.
+flask
+duckdb        # conta linhas lendo o rodapé dos parquets (parquet_file_metadata)
+s3fs          # lista os arquivos no MinIO
+psutil        # readoção do job ativo após restart do painel
+python-dotenv # carrega o .env da raiz via _settings/config.py

@@ -1,14 +1,12 @@
+# Sem barra inicial: pega em qualquer nível (raiz e painel/ têm venv próprio)
 .env
-.env.worker
 .venv
 venv
-dev.duckdb
-dev.duckdb.wal
 __pycache__
 .ruff_cache
-_ops/.deploy_hashes.json
-_ops/.requirements_hashes.json
-_ops/.deployments_hashes.json
+
+dev.duckdb
+dev.duckdb.wal
 erros_ingestao_rais.txt
 env.py
 tcc_backup_bronze

@@ -7,8 +7,8 @@ manifesto. Roda separado dos jobs de carga — só lê arquivos e faz listagem
 leve no S3 (nunca abre o DuckDB), então não compete por CPU com a extração ou
 com a construção da silver.
 
-Uso:
-    python -m painel.app
+Uso (a partir da raiz do projeto):
+    painel\\.venv\\Scripts\\python -m painel.app
     # abre em http://127.0.0.1:8088
 """
 import csv
@@ -20,6 +20,8 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
 
+# O caminho para tasks_python/ é preparado em painel/__init__.py, que roda
+# antes de qualquer coisa aqui.
 from extracao_ftp import heartbeat
 from extracao_ftp.catalogo import DATASETS
 from extracao_ftp.config_extracao import (

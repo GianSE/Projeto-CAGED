@@ -21,7 +21,22 @@ from pathlib import Path
 
 from extracao_ftp.config_extracao import DIR_LOGS
 
-DIR_TASKS_PYTHON = Path(__file__).resolve().parents[1]
+RAIZ = Path(__file__).resolve().parents[1]
+DIR_TASKS_PYTHON = RAIZ / "tasks_python"
+
+# Interpretador que roda os JOBS PESADOS (extração, silver), não o painel.
+#
+# São ambientes diferentes de propósito: o painel só precisa de flask, duckdb
+# e s3fs; os jobs precisam de py7zr, pyarrow, openpyxl e companhia. Usar
+# `sys.executable` aqui apontaria para o venv do painel, que não tem essas
+# dependências, e os botões falhariam na hora de disparar.
+#
+# PYTHON_JOBS permite apontar para outro lugar (útil se o venv da raiz mudar
+# de caminho); o padrão é o .venv da raiz do projeto.
+_PADRAO_JOBS = RAIZ / ".venv" / ("Scripts" if os.name == "nt" else "bin") / \
+    ("python.exe" if os.name == "nt" else "python")
+PYTHON_JOBS = os.getenv("PYTHON_JOBS") or str(_PADRAO_JOBS)
+
 # Uma pasta com um arquivo por execução — nunca sobrescreve, dá pra voltar
 # depois e ver exatamente o que aconteceu numa carga específica.
 DIR_LOGS_EXECUCOES = DIR_LOGS / "execucoes"
@@ -98,7 +113,7 @@ def _caminho_log_mais_recente() -> Path | None:
 def _montar_comando(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
                     tabelas: list[str] | None = None, forcar: bool = False) -> list[str]:
     comando = [
-        sys.executable, "-m", "extracao_ftp.run_extracao",
+        PYTHON_JOBS, "-m", "extracao_ftp.run_extracao",
         "--dataset", *dataset,
         "--ano-inicio", str(ano_inicio),
     ]
@@ -158,7 +173,7 @@ def iniciar(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
 def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = False) -> dict:
     """Sobe o subprocesso de construção da silver (bronze -> silver traduzida)."""
     modulo = "silver_caged.construir_silver" if camada == "caged" else "silver_rais.construir_silver"
-    comando = [sys.executable, "-m", modulo, "--tabela", *tabelas]
+    comando = [PYTHON_JOBS, "-m", modulo, "--tabela", *tabelas]
     if forcar:
         comando.append("--forcar")
     return _lancar(comando, f"silver-{'-'.join(tabelas)}"[:60], "silver")
