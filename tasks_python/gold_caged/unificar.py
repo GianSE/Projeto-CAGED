@@ -34,6 +34,7 @@ from extracao_ftp.config_extracao import (
     conectar_duckdb,
 )
 from gold_caged.cnae_secao import sql_secao
+from gold_caged.escopo_tecnologia import sql_area_ti
 
 DIR_SAIDA = Path(__file__).resolve().parents[2] / "publicacao" / "detalhado"
 DESTINO = DIR_SAIDA / "caged_ti.parquet"
@@ -57,6 +58,7 @@ def sql_unificado() -> str:
             subclasse_descricao                AS cnae_subclasse_descricao,
             cbo2002ocupacao                    AS cbo,
             cbo2002ocupacao_descricao          AS ocupacao,
+            {sql_area_ti("cbo2002ocupacao")}   AS area_ti,
             sexo_descricao                     AS sexo,
             racacor_descricao                  AS raca_cor,
             graudeinstrucao_descricao          AS escolaridade,
@@ -80,6 +82,7 @@ def sql_unificado() -> str:
             cnae_20_subclas_descricao          AS cnae_subclasse_descricao,
             cbo_2002_ocupacao                  AS cbo,
             cbo_2002_ocupacao_descricao        AS ocupacao,
+            {sql_area_ti("cbo_2002_ocupacao")}  AS area_ti,
             sexo_descricao                     AS sexo,
             raca_cor_descricao                 AS raca_cor,
             grau_instrucao_descricao           AS escolaridade,

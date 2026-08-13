@@ -127,6 +127,68 @@ def sql_filtro_tecnologia(col_cnae: str | None, col_cbo: str | None) -> str | No
     return "(" + " OR ".join(partes) + ")"
 
 
+# --- ÁREAS DE ATUAÇÃO EM TI -----------------------------------------------
+# Agrupamento das famílias CBO em áreas analiticamente comparáveis.
+#
+# Por que agrupar em vez de usar a família crua: medido no CAGED, duas
+# famílias respondem por quase nada isoladamente — "Pesquisa em computação"
+# (0,3%) e "Direção de serviços de informática" (0,1%). Como categoria
+# própria virariam ruído em qualquer gráfico ou recorte; somadas ao seu
+# parente natural, viram série legível.
+#
+# A ordem aqui não importa: cada família pertence a exatamente uma área.
+AREAS_TI = {
+    "Desenvolvimento": ["2124", "3171"],          # análise/desenvolvimento + programação
+    "Suporte e Operação": ["3172"],               # helpdesk, operação
+    "Infraestrutura e Dados": ["2123"],           # banco de dados, redes, SO
+    "Engenharia e Pesquisa": ["2122", "2031"],    # engenharia de computação + pesquisa
+    "Gestão e Direção": ["1425", "1236"],         # gerência e direção de TI
+}
+
+# Famílias -> área, invertido para consulta direta.
+_FAMILIA_PARA_AREA = {fam: area for area, fams in AREAS_TI.items() for fam in fams}
+
+# Os códigos avulsos também precisam de área.
+AREA_DOS_AVULSOS = {
+    "313220": "Suporte e Operação",   # manutenção de equipamentos
+    "313305": "Infraestrutura e Dados",  # comunicação de dados
+    "142135": "Gestão e Direção",     # encarregado de proteção de dados (DPO)
+}
+
+# Quem entrou no recorte só pela lente do SETOR (trabalha em empresa de TI mas
+# não exerce ocupação de TI). São 39% do recorte no CAGED — não é resíduo, é
+# uma categoria de pleno direito, e separá-la é o que permite responder
+# "quanto do emprego em empresas de tecnologia não é trabalho técnico".
+AREA_NAO_TI = "Outra ocupação (empresa de TI)"
+
+
+def sql_area_ti(coluna: str = "cbo2002ocupacao") -> str:
+    """
+    Expressão SQL que classifica a ocupação numa área de TI.
+
+    Normaliza o código antes de ler a família: o CAGED antigo grava com
+    tamanho variável e às vezes com hífen, e sem o lpad os quatro primeiros
+    dígitos não seriam a família.
+    """
+    codigo = f"lpad(regexp_replace(trim({coluna}), '[^0-9]', '', 'g'), 6, '0')"
+    familia = f"substr({codigo}, 1, 4)"
+
+    casos = "\n".join(
+        f"            WHEN {familia} = '{fam}' THEN '{area}'"
+        for fam, area in _FAMILIA_PARA_AREA.items()
+    )
+    casos_avulsos = "\n".join(
+        f"            WHEN {codigo} = '{cod}' THEN '{area}'"
+        for cod, area in AREA_DOS_AVULSOS.items()
+    )
+
+    return f"""CASE
+{casos_avulsos}
+{casos}
+            ELSE '{AREA_NAO_TI}'
+        END"""
+
+
 def sql_filtro_cnae(coluna: str = "subclasse") -> str:
     """Predicado SQL do setor de TI."""
     lista = ", ".join(f"'{c}'" for c in CNAE_TI)
