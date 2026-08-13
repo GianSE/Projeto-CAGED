@@ -64,20 +64,25 @@ def _colunas_bronze(con, tabela: str) -> list[str]:
         return []
 
 
-def _mapa_traducao(fs, colunas: list[str]) -> dict[str, dict]:
-    """{coluna_bronze: spec} — casamento automático por nome + mapa manual conferido."""
+def _mapa_traducao(fs, tabela: str, colunas: list[str]) -> dict[str, dict]:
+    """
+    {coluna_bronze: spec} para esta tabela.
+
+    Aqui NÃO há casamento automático por nome, ao contrário do CAGED: na RAIS
+    o nome da coluna quase nunca é o nome da aba (só `municipio` casava), e
+    varrer as 21 planilhas de layout atrás de abas homônimas fundiria tabelas
+    de código de anos diferentes. Todo de/para é declarado e conferido em
+    mapeamento.py.
+    """
     mapa = {}
-
-    for col in colunas:
-        if col in COLUNAS_TECNICAS or col in mp.ABAS_NAO_TRADUZIVEIS:
+    for col, spec in mp.MAPA_MANUAL.get(tabela, {}).items():
+        if col not in colunas:
             continue
-        if existe(fs, mp.NAMESPACE_DICIONARIO, col):
-            mapa[col] = {"namespace": mp.NAMESPACE_DICIONARIO, "aba": col, "estilo": "colon"}
-
-    for col, spec in mp.MAPA_MANUAL.items():
-        if col in colunas and existe(fs, mp.NAMESPACE_DICIONARIO, spec["aba"]):
-            mapa[col] = {"namespace": mp.NAMESPACE_DICIONARIO, **spec}
-
+        if not existe(fs, mp.NAMESPACE_DICIONARIO, spec["aba"], spec.get("planilha")):
+            print(f"      ⚠️  {col}: aba {spec['aba']} não existe em "
+                  f"{spec.get('planilha')} — segue sem tradução")
+            continue
+        mapa[col] = {"namespace": mp.NAMESPACE_DICIONARIO, **spec}
     return mapa
 
 
@@ -85,13 +90,12 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
                    so_tecnologia: bool = True) -> str:
     numericos = {k: v for k, v in mp.NUMERICOS.items() if k in colunas}
     datas_aaaamm = [c for c in mp.DATAS_AAAAMM if c in colunas]
-    mapa = _mapa_traducao(fs, colunas)
+    mapa = _mapa_traducao(fs, tabela, colunas)
 
     if mapa:
         print(f"   📖 {len(mapa)} coluna(s) com tradução: {', '.join(sorted(mapa))}")
     else:
-        print("   ⚠️  Nenhuma coluna casou com o dicionário automaticamente. "
-              "Rode --listar e confira mapeamento.py (MAPA_MANUAL).")
+        print("   ⚠️  Nenhuma coluna traduzível — confira MAPA_MANUAL em mapeamento.py.")
 
     joins, expressoes = [], []
 
@@ -204,7 +208,7 @@ def main() -> int:
             if not colunas:
                 print(f"{tabela}: sem dados em bronze ainda")
                 continue
-            mapa = _mapa_traducao(fs, colunas)
+            mapa = _mapa_traducao(fs, tabela, colunas)
             print(f"\n{tabela} ({len(colunas)} colunas, {len(mapa)} traduzíveis):")
             for col in colunas:
                 marca = "✅" if col in mapa else "  "

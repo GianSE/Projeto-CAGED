@@ -118,7 +118,17 @@ def _converter_planilha(caminho_local: Path, origem_slug: str, fs) -> int:
         df["aba_origem"] = str(nome_aba)
         df["planilha_origem"] = caminho_local.name
 
-        destino = f"{BUCKET_BRONZE}/dicionarios/{origem_slug}/{_slug(nome_aba)}.parquet"
+        # O nome da PLANILHA entra no caminho, não só o da pasta e o da aba.
+        #
+        # Sem isso, planilhas diferentes com abas de mesmo nome se
+        # sobrescrevem: os 7 layouts de vínculos da RAIS têm todos uma aba
+        # "RAIS - layout", e sobrava só a última processada — que era a de
+        # 1985-1993. Os códigos dos layouts modernos (escolaridade após 2005,
+        # tipo de admissão, indicador Simples) sumiam em silêncio, e a
+        # tradução da RAIS recente ficava sem de/para.
+        planilha_slug = _slug(caminho_local.stem.replace(f"{origem_slug}__", ""))
+        destino = (f"{BUCKET_BRONZE}/dicionarios/{origem_slug}/"
+                   f"{planilha_slug}/{_slug(nome_aba)}.parquet")
         try:
             with fs.open(destino, "wb") as f:
                 df.to_parquet(

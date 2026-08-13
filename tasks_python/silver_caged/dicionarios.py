@@ -98,13 +98,38 @@ COLUNAS_ABA_OUTROS = {
 }
 
 
-def _caminho(namespace: str, aba: str) -> str:
-    return f"s3://{PREFIXO_DICIONARIOS}/{namespace}/{aba}.parquet"
+def _caminho(namespace: str, aba: str, planilha: str | None = None) -> str:
+    """
+    Caminho do parquet de um dicionário.
+
+    Há dois formatos no lake: o antigo, plano (`{namespace}/{aba}.parquet`), e
+    o atual, aninhado por planilha (`{namespace}/{planilha}/{aba}.parquet`).
+
+    O aninhamento existe porque planilhas diferentes têm abas de mesmo nome —
+    os 7 layouts de vínculos da RAIS têm todos uma aba "RAIS - layout", e no
+    formato plano só sobrevivia o último processado.
+
+    Sem `planilha`, o `**` casa os DOIS formatos de uma vez, então o CAGED não
+    depende de qual extração escreveu o dicionário (um rebuild do bucket do
+    zero produz só o aninhado). Se as duas cópias existirem, o SELECT DISTINCT
+    de cada gerador de SQL colapsa a duplicata.
+
+    A RAIS não pode usar esse atalho: fundir os 6 layouts de vínculos misturaria
+    tabelas de códigos que mudaram entre os anos (escolaridade antes/depois de
+    2005 é o caso claro). Por isso ela passa `planilha` explicitamente.
+    """
+    if planilha:
+        return f"s3://{PREFIXO_DICIONARIOS}/{namespace}/{planilha}/{aba}.parquet"
+    return f"s3://{PREFIXO_DICIONARIOS}/{namespace}/**/{aba}.parquet"
 
 
-def existe(fs, namespace: str, aba: str) -> bool:
+def existe(fs, namespace: str, aba: str, planilha: str | None = None) -> bool:
     """Verifica no MinIO se um dicionário existe, sem tentar lê-lo."""
-    return fs.exists(f"{PREFIXO_DICIONARIOS}/{namespace}/{aba}.parquet")
+    if planilha:
+        return fs.exists(f"{PREFIXO_DICIONARIOS}/{namespace}/{planilha}/{aba}.parquet")
+    # Espelha o glob de `_caminho`: vale tanto plano quanto aninhado.
+    return bool(fs.glob(f"{PREFIXO_DICIONARIOS}/{namespace}/**/{aba}.parquet")) or \
+        fs.exists(f"{PREFIXO_DICIONARIOS}/{namespace}/{aba}.parquet")
 
 
 def _sql_2col(caminho: str) -> str:
@@ -157,14 +182,24 @@ def _sql_cagestid(caminho: str, campo: str) -> str:
     """
 
 
+# Literais de cabeçalho que algumas abas repetem como se fossem dado. Nas abas
+# de três colunas do layout de estabelecimento da RAIS, a linha
+# "Categorias | Descrição | Valor na Fonte" fica logo abaixo do título e
+# entraria no dicionário como o código "Valor na Fonte". Nunca casaria com um
+# código de verdade, mas suja a contagem de entradas e a conferência.
+_CABECALHOS = ("valor na fonte", "codigo", "código", "categorias", "descricao", "descrição")
+
+
 def _sql_titulo_codigo(caminho: str, col_desc: str = "col_00", col_cod: str = "col_01") -> str:
     # A linha de título não tem valor na coluna de código -> IS NOT NULL a descarta sozinha.
+    lista = ", ".join(f"'{c}'" for c in _CABECALHOS)
     return f"""
         SELECT DISTINCT
             trim("{col_cod}") AS codigo,
             trim("{col_desc}") AS descricao
         FROM read_parquet('{caminho}')
         WHERE "{col_cod}" IS NOT NULL AND "{col_desc}" IS NOT NULL
+          AND lower(trim("{col_cod}")) NOT IN ({lista})
     """
 
 
@@ -191,7 +226,9 @@ def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str, **kwa
     Devolve False sem lançar exceção se o parquet não existir ou vier vazio —
     a silver deve seguir sem tradução para essa coluna, não travar por isso.
     """
-    caminho = _caminho(namespace, aba)
+    # `planilha` sai dos kwargs porque não é parâmetro dos geradores de SQL —
+    # ela só escolhe QUAL parquet ler, não como interpretá-lo.
+    caminho = _caminho(namespace, aba, kwargs.pop("planilha", None))
 
     if estilo == "2col":
         sql = _sql_2col(caminho)
