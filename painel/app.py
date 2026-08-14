@@ -38,6 +38,7 @@ from extracao_ftp.config_extracao import (
 )
 from painel import processos
 from painel.totais_esperados import TOTAIS_BRONZE
+from painel import hf_status
 
 REFRESH_SEGUNDOS = 5
 PREFIXOS_BRONZE_ESPECIAIS = {"_layouts", "dicionarios"}
@@ -314,6 +315,9 @@ def _montar_status() -> dict:
 
     manifesto = _ler_manifesto()
     por_tabela = manifesto["por_tabela"]
+    # Uma consulta por refresh, não uma por tabela: o módulo lê a árvore
+    # inteira do repositório de uma vez e serve do cache.
+    hf = hf_status.ler()
 
     tabelas = []
     for nome in sorted(tabelas_bronze | tabelas_silver):
@@ -336,7 +340,22 @@ def _montar_status() -> dict:
         # própria fatia de TI no mercado — a leitura mais informativa do card.
         pct_ti = (round(linhas_silver / linhas_bronze * 100, 2)
                   if linhas_bronze and linhas_silver is not None else None)
+
+        # Mercado completo: o mesmo raciocínio do recorte de TI — o bronze é a
+        # meta, porque a silver grava um arquivo por arquivo do bronze.
+        pct_silver_full = min(100, round(n_silver_full / n_bronze * 100)) if n_bronze else None
+
+        # Publicação: a meta é a silver completa, não o bronze. Publicar o que
+        # ainda não foi traduzido não faria sentido, e usar o bronze como
+        # denominador faria a barra parecer travada durante todo o upload.
+        n_hf = hf.get("por_tabela", {}).get(nome, {}).get("arquivos", 0)
+        pct_hf = min(100, round(n_hf / n_silver_full * 100)) if n_silver_full else None
+
         tabelas.append({
+            "hf": n_hf,
+            "hf_esperado": n_silver_full,
+            "pct_hf": pct_hf,
+            "pct_silver_completo": pct_silver_full,
             "tabela": nome,
             "bronze": n_bronze,
             "bronze_esperado": esperado,
@@ -362,6 +381,7 @@ def _montar_status() -> dict:
         "manifesto": manifesto,
         "processo": processos.status(),
         "disco": _disco(),
+        "hf": hf,
     }
 
 
@@ -421,6 +441,7 @@ def api_silver_iniciar():
     tabelas = corpo.get("tabelas") or []
     camada = corpo.get("camada", "caged")
     forcar = bool(corpo.get("forcar", False))
+    mercado_completo = bool(corpo.get("mercado_completo", False))
 
     validas = TABELAS_SILVER.get(camada)
     if validas is None:
@@ -431,9 +452,48 @@ def api_silver_iniciar():
     if invalidas:
         return jsonify({"ok": False, "erro": f"tabela inválida para {camada}: {invalidas}"}), 400
 
-    resultado = processos.iniciar_silver(tabelas, camada=camada, forcar=forcar)
+    # hive acompanha o mercado completo: é esse o recorte que vai publicado, e
+    # é a partição por ano/mês que o dataset publicado usa. Deixar os dois
+    # separados na interface só criaria a combinação sem sentido "completo sem
+    # partição", que ninguém quer e que quebraria o publicador.
+    resultado = processos.iniciar_silver(tabelas, camada=camada, forcar=forcar,
+                                         mercado_completo=mercado_completo,
+                                         hive=mercado_completo)
     if resultado["ok"]:
         resultado["tabelas"] = tabelas
+    return jsonify(resultado), (200 if resultado["ok"] else 409)
+
+
+@app.route("/api/publicar/iniciar", methods=["POST"])
+def api_publicar_iniciar():
+    """
+    Publica a silver completa no Hugging Face.
+
+    Só aceita tabelas que já tenham algo na silver do mercado completo:
+    disparar o upload de uma tabela vazia criaria um job que não faz nada e
+    ocuparia a trava de job único à toa.
+    """
+    corpo = request.get_json(silent=True) or {}
+    tabelas = corpo.get("tabelas") or []
+    repo = (corpo.get("repo") or hf_status.REPO_PADRAO).strip()
+
+    validas = TABELAS_SILVER["caged"]
+    if not tabelas:
+        tabelas = list(validas)
+    invalidas = [t for t in tabelas if t not in validas]
+    if invalidas:
+        return jsonify({"ok": False, "erro": f"tabela inválida: {invalidas}"}), 400
+
+    fs = _fs()
+    vazias = [t for t in tabelas if not _contar_parquets(fs, BUCKET_SILVER, t)]
+    if vazias:
+        return jsonify({"ok": False,
+                        "erro": f"sem silver do mercado completo para: {', '.join(vazias)}"}), 409
+
+    resultado = processos.iniciar_publicacao(tabelas, repo)
+    if resultado["ok"]:
+        resultado["tabelas"] = tabelas
+        resultado["repo"] = repo
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 
 

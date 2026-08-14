@@ -100,6 +100,11 @@
                  display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
                  font-size: 11.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
   .barra-fill.barra-silver { background: linear-gradient(90deg, var(--seq-100), var(--seq-300)); }
+  /* As duas etapas de publicação usam cores próprias para não se confundirem
+     com as de ingestão numa olhada rápida: âmbar para a silver completa,
+     amarelo do Hugging Face para o upload. */
+  .barra-fill.barra-completo { background: linear-gradient(90deg, #b45309, #f59e0b); }
+  .barra-fill.barra-hf { background: linear-gradient(90deg, #f59e0b, #fcd34d); }
 
   table.atividade { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.atividade th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; padding: 6px 10px; border-bottom: 1px solid var(--gridline); }
@@ -147,6 +152,11 @@
   .botao-stop { background: var(--critical); color: #ffffff; }
   .botao-retentar { background: var(--seq-450); color: #ffffff; padding: 6px 12px; font-size: 12.5px; }
   .botao-silver { background: var(--seq-450); color: #ffffff; }
+  /* Publicação em âmbar, alinhada às barras das etapas correspondentes — e
+     visualmente distinta dos disparos que só mexem em dado local, porque essa
+     é a única ação do painel que expõe algo publicamente. */
+  .botao-silver-completo { background: #b45309; color: #ffffff; }
+  .botao-publicar { background: #f59e0b; color: #1f2937; }
   .erros-topo { display: flex; align-items: center; justify-content: space-between; margin: 28px 0 12px; }
   .erros-topo h2 { margin: 0; }
   .processo-status { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); min-height: 18px; }
@@ -192,7 +202,9 @@
       </div>
       <div class="controles-botoes">
         <button id="btn-play" class="botao botao-play">▶ Iniciar extração</button>
-        <button id="btn-silver" class="botao botao-silver">🔨 Construir silver</button>
+        <button id="btn-silver" class="botao botao-silver">🔨 Silver · TI</button>
+        <button id="btn-silver-completo" class="botao botao-silver-completo">🔨 Silver · completa</button>
+        <button id="btn-publicar" class="botao botao-publicar">🤗 Publicar no HF</button>
         <button id="btn-stop" class="botao botao-stop" style="display:none;">⏹ Parar</button>
       </div>
     </div>
@@ -370,6 +382,27 @@ function atualizarTabelas(tabelas) {
     container.innerHTML = '<div class="vazio">Nenhuma tabela encontrada ainda.</div>';
     return;
   }
+  // As duas etapas do caminho até o dataset público. Só aparecem depois que a
+  // tabela tem algo no mercado completo: para quem está só acompanhando a
+  // extração, duas barras zeradas em todo card seriam ruído.
+  function etapaPublicacao(t) {
+    if (!t.silver_completo) return '';
+    const pctC = t.pct_silver_completo ?? 0;
+    const pctH = t.pct_hf ?? 0;
+    return `
+      <div class="etapa-rotulo" style="margin-top:12px;">Silver · mercado completo ${pctC === 100 ? '✓' : ''}</div>
+      <div class="barra-track"><div class="barra-fill barra-completo" style="width:${pctC}%"></div></div>
+      <div class="contagem">
+        <span>${fmt(t.silver_completo)} / ${fmt(t.silver_esperado)} arquivo(s)</span>
+        <span>${pctC}%</span>
+      </div>
+      <div class="etapa-rotulo" style="margin-top:12px;">Hugging Face ${pctH === 100 ? '✓' : ''}</div>
+      <div class="barra-track"><div class="barra-fill barra-hf" style="width:${pctH}%"></div></div>
+      <div class="contagem">
+        <span>${t.hf ? fmt(t.hf) + ' / ' + fmt(t.hf_esperado) + ' publicado(s)' : 'não publicado'}</span>
+        <span>${t.hf ? pctH + '%' : ''}</span>
+      </div>`;
+  }
   for (const t of tabelas) {
     const pct = t.pct_bronze === null || t.pct_bronze === undefined ? null : t.pct_bronze;
     const div = document.createElement('div');
@@ -384,12 +417,13 @@ function atualizarTabelas(tabelas) {
         <span>${fmt(t.bronze)}${t.bronze_esperado ? ' / ' + fmt(t.bronze_esperado) : ''} arquivo(s)</span>
         <span>${pct !== null ? pct + '%' : ''}</span>
       </div>
-      <div class="etapa-rotulo" style="margin-top:12px;">Silver ${silverCompleta ? '✓' : ''}</div>
+      <div class="etapa-rotulo" style="margin-top:12px;">Silver · TI ${silverCompleta ? '✓' : ''}</div>
       <div class="barra-track"><div class="barra-fill barra-silver" style="width:${pctS ?? 0}%"></div></div>
       <div class="contagem">
         <span>${t.bronze ? fmt(t.silver) + ' / ' + fmt(t.silver_esperado) + ' arquivo(s)' : 'pendente'}</span>
         <span>${pctS !== null ? pctS + '%' : ''}</span>
       </div>
+      ${etapaPublicacao(t)}
       ${linhasCard(t)}
       ${rodapeCard(t)}`;
     container.appendChild(div);
@@ -398,6 +432,7 @@ function atualizarTabelas(tabelas) {
 
 let processoRodando = false;
 let ultimaContagemErros = 0;
+let ultimoRepoHF = null;
 let segundosMedioItem = null;
 
 function atualizarBotaoRetentar() {
@@ -533,11 +568,15 @@ function atualizarProcesso(proc) {
   processoRodando = proc.rodando;
   atualizarBotaoRetentar();
 
-  const btnSilver = document.getElementById('btn-silver');
+  // Todos os disparos somem juntos enquanto há job: a trava de "um job pesado
+  // por vez" é do backend, e deixar o botão clicável só renderia um alerta de
+  // recusa.
+  const btnsJob = ['btn-silver', 'btn-silver-completo', 'btn-publicar']
+    .map(id => document.getElementById(id));
 
   if (proc.rodando) {
     btnPlay.style.display = 'none';
-    btnSilver.style.display = 'none';
+    btnsJob.forEach(b => b.style.display = 'none');
     btnStop.style.display = 'inline-block';
     opcoes.querySelectorAll('input').forEach(el => el.disabled = true);
     const decorrido = Math.round((Date.now() / 1000) - proc.iniciado_em);
@@ -546,7 +585,7 @@ function atualizarProcesso(proc) {
     statusTxt.innerHTML = `<span style="color:var(--good); font-weight:600;">● ${proc.tipo || 'job'} rodando</span> — PID ${proc.pid} · há ${tempo}`;
   } else {
     btnPlay.style.display = 'inline-block';
-    btnSilver.style.display = 'inline-block';
+    btnsJob.forEach(b => b.style.display = 'inline-block');
     btnStop.style.display = 'none';
     opcoes.querySelectorAll('input').forEach(el => el.disabled = false);
     if (proc.codigo_saida === null || proc.codigo_saida === undefined) {
@@ -596,24 +635,47 @@ async function retentarErros() {
   atualizar();
 }
 
-async function construirSilver() {
+async function construirSilver(mercadoCompleto) {
   // A construção é retomável (pula parquet que já existe), então re-disparar
   // continua de onde parou em vez de refazer tudo.
-  if (!confirm('Construir a silver do CAGED?\n\nProcessa as tabelas que ainda faltam e retoma de onde parou.')) return;
+  const recorte = mercadoCompleto
+    ? 'do MERCADO COMPLETO (todos os setores, particionada por ano/mês)'
+    : 'do recorte de TECNOLOGIA';
+  if (!confirm(`Construir a silver do CAGED ${recorte}?\n\nProcessa o que ainda falta e retoma de onde parou.`)) return;
   const resp = await fetch('/api/silver/iniciar', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ camada: 'caged' }),
+    body: JSON.stringify({ camada: 'caged', mercado_completo: !!mercadoCompleto }),
   });
   const dados = await resp.json();
   if (!dados.ok) alert(dados.erro || 'Não foi possível iniciar.');
   atualizar();
 }
 
+async function publicarHF() {
+  // Publicar é a única ação do painel que sai da máquina: o dataset é público,
+  // e o que subir fica visível para qualquer pessoa. Daí o aviso explícito com
+  // o nome do repositório, em vez de um confirm genérico.
+  const repo = ultimoRepoHF || 'Gianpedro/caged-microdados-traduzidos';
+  if (!confirm(`Publicar a silver do mercado completo em:\n\n  ${repo}\n\n` +
+               'O dataset é PÚBLICO. Só sobem as tabelas que já têm silver completa; ' +
+               'o que já está lá com o mesmo conteúdo não é reenviado.')) return;
+  const resp = await fetch('/api/publicar/iniciar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repo }),
+  });
+  const dados = await resp.json();
+  if (!dados.ok) alert(dados.erro || 'Não foi possível iniciar a publicação.');
+  atualizar();
+}
+
 document.getElementById('btn-play').addEventListener('click', iniciarExtracao);
 document.getElementById('btn-stop').addEventListener('click', pararExtracao);
 document.getElementById('btn-retentar').addEventListener('click', retentarErros);
-document.getElementById('btn-silver').addEventListener('click', construirSilver);
+document.getElementById('btn-silver').addEventListener('click', () => construirSilver(false));
+document.getElementById('btn-silver-completo').addEventListener('click', () => construirSilver(true));
+document.getElementById('btn-publicar').addEventListener('click', publicarHF);
 
 async function atualizar() {
   try {
@@ -621,6 +683,10 @@ async function atualizar() {
     const dados = await resp.json();
     if (!dados.pronto) return;
     segundosMedioItem = dados.manifesto ? dados.manifesto.segundos_medio : null;
+    // O repositório vem do backend (variável de ambiente), não fica fixo no
+    // JS: assim o botão de publicar nunca aponta para um repo diferente do
+    // que as barras de progresso estão medindo.
+    if (dados.hf && dados.hf.repo) ultimoRepoHF = dados.hf.repo;
     atualizarMinio(dados.minio);
     atualizarHeartbeat(dados.heartbeat, dados.processo);
     atualizarTabelas(dados.tabelas);

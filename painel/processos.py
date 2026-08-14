@@ -170,13 +170,41 @@ def iniciar(dataset: list[str], ano_inicio: int, ano_fim: int | None = None,
     return _lancar(comando, rotulo, "extração")
 
 
-def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = False) -> dict:
-    """Sobe o subprocesso de construção da silver (bronze -> silver traduzida)."""
+def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = False,
+                   mercado_completo: bool = False, hive: bool = False) -> dict:
+    """
+    Sobe o subprocesso de construção da silver (bronze -> silver traduzida).
+
+    Os dois recortes vão para buckets diferentes (silver-ti e silver), então
+    disparar um não atrapalha o outro. `hive` só faz sentido no mercado
+    completo, que é o recorte destinado à publicação: é o formato particionado
+    por ano/mês que o dataset publicado usa.
+    """
     modulo = "silver_caged.construir_silver" if camada == "caged" else "silver_rais.construir_silver"
     comando = [PYTHON_JOBS, "-m", modulo, "--tabela", *tabelas]
     if forcar:
         comando.append("--forcar")
-    return _lancar(comando, f"silver-{'-'.join(tabelas)}"[:60], "silver")
+    if mercado_completo:
+        comando.append("--mercado-completo")
+    if hive:
+        comando.append("--hive")
+
+    recorte = "completo" if mercado_completo else "ti"
+    return _lancar(comando, f"silver-{recorte}-{'-'.join(tabelas)}"[:60], "silver")
+
+
+def iniciar_publicacao(tabelas: list[str], repo: str) -> dict:
+    """
+    Sobe o subprocesso de publicação no Hugging Face (silver -> Hub).
+
+    Passa pelo mesmo _lancar dos demais, e portanto pela mesma trava de "um job
+    pesado por vez". Não é por memória — o upload é leve — e sim porque
+    publicar uma tabela que ainda está sendo construída subiria um retrato
+    parcial dela, e o dataset ficaria com meses faltando sem nenhum aviso.
+    """
+    comando = [PYTHON_JOBS, "-m", "silver_caged.publicar_hf",
+               "--repo", repo, "--tabela", *tabelas]
+    return _lancar(comando, f"hf-{'-'.join(tabelas)}"[:60], "publicação")
 
 
 def parar() -> dict:
