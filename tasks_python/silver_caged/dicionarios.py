@@ -218,10 +218,18 @@ def chave_normalizada(expr: str) -> str:
     return SQL_CHAVE_NORMALIZADA.format(expr=expr)
 
 
-def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str, **kwargs) -> bool:
+def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str,
+               materializar: bool = False, **kwargs) -> bool:
     """
     Cria (ou substitui) uma VIEW temporária no DuckDB com as colunas
     (codigo, descricao, codigo_norm).
+
+    Com `materializar=True` cria uma TABELA temporária em vez de uma view. A
+    diferença importa quando a mesma tradução é usada por muitos arquivos: uma
+    view relê o parquet do dicionário no MinIO a cada consulta, enquanto a
+    tabela é lida uma vez e fica em memória. Os dicionários têm alguns milhares
+    de linhas, então o custo de memória é desprezível perto de milhares de
+    idas à rede.
 
     Devolve False sem lançar exceção se o parquet não existir ou vier vazio —
     a silver deve seguir sem tradução para essa coluna, não travar por isso.
@@ -258,8 +266,9 @@ def criar_view(con, namespace: str, aba: str, estilo: str, nome_view: str, **kwa
         GROUP BY 1
     """
 
+    objeto = "TABLE" if materializar else "VIEW"
     try:
-        con.execute(f"CREATE OR REPLACE TEMP VIEW {nome_view} AS {sql_normalizado};")
+        con.execute(f"CREATE OR REPLACE TEMP {objeto} {nome_view} AS {sql_normalizado};")
         total = con.execute(f"SELECT count(*) FROM {nome_view}").fetchone()[0]
         return total > 0
     except Exception as e:

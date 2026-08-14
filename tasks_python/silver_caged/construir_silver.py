@@ -131,20 +131,43 @@ def _mapa_traducao(con, fs, tabela: str, colunas: list[str]) -> dict[str, dict]:
     return mapa
 
 
+def preparar_dicionarios(con, fs, tabela: str, colunas: list[str]) -> dict[str, str]:
+    """
+    Materializa UMA VEZ, por tabela, os dicionários que ela usa.
+
+    Antes isso acontecia dentro do laço de arquivos: cada um dos 514 arquivos
+    do bronze recriava as ~21 views de dicionário, e como view é preguiçosa,
+    cada tradução relia o parquet do dicionário no MinIO. Eram ~10.800 leituras
+    de tabelas que não mudam nunca. Materializadas em tabela temporária, são 21
+    leituras no total.
+
+    Devolve {coluna_do_fato: nome_da_tabela_temporaria}, só para os dicionários
+    que de fato existem e vieram com linhas.
+    """
+    mapa = _mapa_traducao(con, fs, tabela, colunas)
+    if not mapa:
+        print("   ⚠️  Nenhuma coluna com dicionário disponível — silver sairá só tipada.")
+        return {}
+
+    prontos = {}
+    for col, spec in mapa.items():
+        spec = dict(spec)
+        namespace, aba, estilo = spec.pop("namespace"), spec.pop("aba"), spec.pop("estilo")
+        nome_view = f"dic_{tabela}_{col}"
+        if criar_view(con, namespace, aba, estilo, nome_view, materializar=True, **spec):
+            prontos[col] = nome_view
+
+    print(f"   📖 {len(prontos)} coluna(s) com tradução: {', '.join(sorted(prontos))}")
+    return prontos
+
+
 def _select_silver(con, fs, tabela: str, colunas: list[str], caminho_bronze: str,
-                   silencioso: bool = False, so_tecnologia: bool = False) -> str:
+                   dicionarios: dict[str, str], so_tecnologia: bool = False) -> str:
     geracao = mp.geracao(tabela)
     numericos = mp.NUMERICOS_NOVO_CAGED if geracao == "novo" else mp.NUMERICOS_CAGED_ANTIGO
     datas_aaaamm = mp.DATAS_AAAAMM_NOVO_CAGED if geracao == "novo" else mp.DATAS_AAAAMM_CAGED_ANTIGO
     numericos = {k: v for k, v in numericos.items() if k in colunas}
     datas_aaaamm = [c for c in datas_aaaamm if c in colunas]
-
-    mapa = _mapa_traducao(con, fs, tabela, colunas)
-    if not silencioso:
-        if mapa:
-            print(f"   📖 {len(mapa)} coluna(s) com tradução: {', '.join(sorted(mapa))}")
-        else:
-            print("   ⚠️  Nenhuma coluna com dicionário disponível — silver sairá só tipada.")
 
     joins = []
     expressoes = []
@@ -161,22 +184,19 @@ def _select_silver(con, fs, tabela: str, colunas: list[str], caminho_bronze: str
         else:
             expressoes.append(f'b."{col}" AS "{col}"')
 
-        if col in mapa:
-            spec = dict(mapa[col])
-            namespace, aba, estilo = spec.pop("namespace"), spec.pop("aba"), spec.pop("estilo")
-            nome_view = f"dic_{tabela}_{col}"
-            if criar_view(con, namespace, aba, estilo, nome_view, **spec):
-                # O CAGED antigo grava código curto com zero à esquerda
-                # ("02", "07"), mas o dicionário do layout traz o código sem
-                # padding ("2", "7"). A chave canônica (ver dicionarios.py)
-                # resolve isso dos dois lados e mantém a junção como
-                # igualdade simples, que o DuckDB executa via hash join.
-                chave_fato = chave_normalizada(f'b."{col}"')
-                joins.append(
-                    f'LEFT JOIN {nome_view} AS "{nome_view}" '
-                    f'ON {chave_fato} = "{nome_view}".codigo_norm'
-                )
-                expressoes.append(f'"{nome_view}".descricao AS "{col}_descricao"')
+        if col in dicionarios:
+            nome_view = dicionarios[col]
+            # O CAGED antigo grava código curto com zero à esquerda ("02",
+            # "07"), mas o dicionário do layout traz o código sem padding
+            # ("2", "7"). A chave canônica (ver dicionarios.py) resolve isso
+            # dos dois lados e mantém a junção como igualdade simples, que o
+            # DuckDB executa via hash join.
+            chave_fato = chave_normalizada(f'b."{col}"')
+            joins.append(
+                f'LEFT JOIN {nome_view} AS "{nome_view}" '
+                f'ON {chave_fato} = "{nome_view}".codigo_norm'
+            )
+            expressoes.append(f'"{nome_view}".descricao AS "{col}_descricao"')
 
         if col in datas_aaaamm:
             expressoes.append(
@@ -219,8 +239,54 @@ def _ano_do_caminho(caminho: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _stems_existentes(fs, bucket: str, tabela: str) -> set[str]:
+    """
+    Nomes de arquivo-fonte já gravados na saída particionada.
+
+    Na saída hive o destino de um arquivo não é um caminho previsível (depende
+    dos valores de ano/mês nas linhas), então o "pular o que já existe" não
+    pode ser um fs.exists() por arquivo. Lista uma vez só e devolve o conjunto
+    de stems — 514 chamadas de exists() ao MinIO viraram uma listagem.
+    """
+    existentes = set()
+    for caminho in fs.glob(f"{bucket}/{tabela}/**/*.parquet"):
+        nome = caminho.split("/")[-1].removesuffix(".parquet")
+        existentes.add(nome.rsplit("_", 1)[0])  # tira o sufixo _{i} do FILENAME_PATTERN
+    return existentes
+
+
+def _copy_particionado(destino_s3: str, stem: str, query: str) -> str:
+    """
+    COPY com partição hive ano_particao=/mes_particao=.
+
+    PARTITION_BY sobre as COLUNAS, e não sobre o caminho do bronze de origem:
+    caged_ajustes mistura arquivo anual ("ano=2002/") com mensal
+    ("ano=2010/mes=1/"), e derivar a partição do caminho produziria uma árvore
+    de profundidade irregular — que é justamente o que faz hive_partitioning
+    quebrar na leitura. Vindo do dado, as linhas anuais caem todas em
+    mes_particao=__HIVE_DEFAULT_PARTITION__ e a profundidade fica uniforme.
+
+    FILENAME_PATTERN carimba o nome do arquivo de origem: sem isso todo COPY
+    escreveria "data_0.parquet" na mesma pasta e um mês sobrescreveria o
+    outro sempre que dois arquivos-fonte caíssem na mesma partição.
+
+    OVERWRITE_OR_IGNORE é obrigatório aqui: a partir do segundo arquivo a pasta
+    de destino já existe, e sem ele o DuckDB aborta com "directory not empty".
+    """
+    return f"""
+        COPY ({query}) TO '{destino_s3}' (
+            FORMAT PARQUET,
+            PARTITION_BY (ano_particao, mes_particao),
+            FILENAME_PATTERN '{stem}_{{i}}',
+            COMPRESSION '{PARQUET_COMPRESSION.upper()}',
+            COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL},
+            OVERWRITE_OR_IGNORE true
+        );
+    """
+
+
 def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
-              so_tecnologia: bool = False) -> bool:
+              so_tecnologia: bool = False, hive: bool = False) -> bool:
     """
     Constrói a silver de uma tabela, UM ARQUIVO BRONZE POR VEZ.
 
@@ -250,41 +316,63 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
             if (ano := _ano_do_caminho(a)) is None or ano_inicio <= ano <= ano_fim
         ]
 
+    # Uma vez por tabela, não uma vez por arquivo: o mapa de tradução é o mesmo
+    # para todos os arquivos, e o schema usado aqui é a união das colunas de
+    # todos eles (o CAGED antigo muda de colunas entre eras).
+    dicionarios = preparar_dicionarios(con, fs, tabela, _colunas_bronze(con, tabela))
+
     total_linhas = 0
     feitos = pulados = falhas = 0
-    primeiro = True
+
+    # Na saída hive a checagem de "já existe" é feita contra uma listagem única.
+    ja_gravados = _stems_existentes(fs, bucket_destino, tabela) if hive and not forcar else set()
 
     for n, origem in enumerate(arquivos, start=1):
-        destino_rel = origem.replace(f"{BUCKET_BRONZE}/", f"{bucket_destino}/", 1)
+        stem = origem.split("/")[-1].removesuffix(".parquet")
 
-        if not forcar and fs.exists(destino_rel):
-            pulados += 1
-            continue
+        if hive:
+            if stem in ja_gravados:
+                pulados += 1
+                continue
+            destino_s3 = f"s3://{bucket_destino}/{tabela}"
+        else:
+            destino_rel = origem.replace(f"{BUCKET_BRONZE}/", f"{bucket_destino}/", 1)
+            if not forcar and fs.exists(destino_rel):
+                pulados += 1
+                continue
+            destino_s3 = f"s3://{destino_rel}"
 
         origem_s3 = f"s3://{origem}"
-        destino_s3 = f"s3://{destino_rel}"
 
         colunas = _colunas_arquivo(con, origem_s3)
         if not colunas:
             falhas += 1
             continue
 
-        # O mapa de tradução é o mesmo para todos os arquivos da tabela;
-        # imprime só na primeira vez para não poluir o log com 156 repetições.
+        # Só as colunas que ESTE arquivo tem entram no SELECT; os dicionários
+        # já estão prontos e são compartilhados por todos.
         query = _select_silver(con, fs, tabela, colunas, origem_s3,
-                               silencioso=not primeiro, so_tecnologia=so_tecnologia)
-        primeiro = False
+                               dicionarios, so_tecnologia=so_tecnologia)
 
         try:
-            con.execute(f"""
-                COPY ({query}) TO '{destino_s3}' (
-                    FORMAT PARQUET,
-                    COMPRESSION '{PARQUET_COMPRESSION.upper()}',
-                    COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL}
-                );
-            """)
+            if hive:
+                con.execute(_copy_particionado(destino_s3, stem, query))
+                # Conferência pelo que FOI escrito, não pelo que se pretendia
+                # escrever: só o count(*) do parquet de destino prova que o
+                # arquivo saiu legível. Lê apenas o rodapé, então é barato.
+                leitura = f"{destino_s3}/**/{stem}_*.parquet"
+            else:
+                con.execute(f"""
+                    COPY ({query}) TO '{destino_s3}' (
+                        FORMAT PARQUET,
+                        COMPRESSION '{PARQUET_COMPRESSION.upper()}',
+                        COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL}
+                    );
+                """)
+                leitura = destino_s3
+
             linhas = con.execute(
-                f"SELECT count(*) FROM read_parquet('{destino_s3}')"
+                f"SELECT count(*) FROM read_parquet('{leitura}')"
             ).fetchone()[0]
             total_linhas += linhas
             feitos += 1
@@ -311,6 +399,11 @@ def _argumentos():
                    help="Grava TODO o mercado em vez de só tecnologia (padrão: só TI). "
                         "O mercado completo ocupa ~100x mais espaço; a linha de base "
                         "para comparação vem dos agregados da gold, calculados do bronze.")
+    p.add_argument("--hive", action="store_true",
+                   help="Grava em partições hive ano_particao=/mes_particao= em vez de "
+                        "espelhar o caminho do bronze. É o formato esperado por quem lê o "
+                        "dataset publicado: o leitor filtra por ano sem abrir os arquivos "
+                        "dos outros anos.")
     return p.parse_args()
 
 
@@ -338,7 +431,7 @@ def main() -> int:
     sucesso = 0
     for tabela in args.tabela:
         if construir(con, fs, tabela, args.ano_inicio, args.ano_fim, args.forcar,
-                     so_tecnologia=not args.mercado_completo):
+                     so_tecnologia=not args.mercado_completo, hive=args.hive):
             sucesso += 1
 
     print(f"\n🏁 {sucesso}/{len(args.tabela)} tabela(s) construída(s) na silver.")
