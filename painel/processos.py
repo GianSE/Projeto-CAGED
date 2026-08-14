@@ -12,6 +12,7 @@ até o processo terminar, e o log tail do painel ficaria sempre vazio.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -189,8 +190,12 @@ def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = Fal
     if hive:
         comando.append("--hive")
 
+    # O tipo aparece no status ("● ... rodando"), então diz QUAL silver: os dois
+    # recortes levam tempos muito diferentes, e "silver rodando" sozinho não
+    # deixa claro se são minutos ou horas.
     recorte = "completo" if mercado_completo else "ti"
-    return _lancar(comando, f"silver-{recorte}-{'-'.join(tabelas)}"[:60], "silver")
+    tipo = "silver (mercado completo)" if mercado_completo else "silver (TI)"
+    return _lancar(comando, f"silver-{recorte}-{'-'.join(tabelas)}"[:60], tipo)
 
 
 def iniciar_publicacao(tabelas: list[str], repo: str) -> dict:
@@ -204,7 +209,7 @@ def iniciar_publicacao(tabelas: list[str], repo: str) -> dict:
     """
     comando = [PYTHON_JOBS, "-m", "silver_caged.publicar_hf",
                "--repo", repo, "--tabela", *tabelas]
-    return _lancar(comando, f"hf-{'-'.join(tabelas)}"[:60], "publicação")
+    return _lancar(comando, f"hf-{'-'.join(tabelas)}"[:60], f"publicação → {repo}")
 
 
 def parar() -> dict:
@@ -271,6 +276,75 @@ def listar_execucoes() -> list[dict]:
     ]
 
 
+_RE_ITEM = re.compile(r"\[(\d+)/(\d+)\]")
+_RE_TABELA = re.compile(r"(?:SILVER|BRONZE):\s*(\w+)")
+_RE_ENVIO = re.compile(r"(\d+) arquivo\(s\), ([\d.]+) GB")
+
+
+def _linhas_log(caminho: Path) -> list[str]:
+    """Log inteiro. São centenas de KB no pior caso — barato o bastante a cada refresh."""
+    try:
+        with open(caminho, "r", encoding="utf-8", errors="replace") as f:
+            return f.read().splitlines()
+    except Exception:
+        return []
+
+
+def _progresso(linhas: list[str], iniciado_em: float | None) -> dict | None:
+    """
+    Progressão do job a partir do log que ele já imprime.
+
+    O construtor da silver escreve "[49/78] ✅ arquivo: N linhas" por arquivo e
+    "🔨 SILVER: caged_mov" ao trocar de tabela. Em vez de instrumentar o job
+    para reportar progresso por outro canal (arquivo de estado, socket), o
+    painel lê o que já está lá — o log é a fonte da verdade e continua legível
+    para um humano.
+
+    Varre de trás para frente: interessa a ÚLTIMA ocorrência, e os logs chegam
+    a dezenas de milhares de linhas.
+    """
+    atual = total = None
+    tabela = None
+
+    for linha in reversed(linhas):
+        if atual is None:
+            m = _RE_ITEM.search(linha)
+            if m:
+                atual, total = int(m.group(1)), int(m.group(2))
+        if tabela is None:
+            m = _RE_TABELA.search(linha)
+            if m:
+                tabela = m.group(1)
+        if atual is not None and tabela is not None:
+            break
+
+    if atual is None or not total:
+        return None
+
+    pct = min(100, round(atual / total * 100))
+
+    # ETA pela média do que ESTA execução processou, não pelo índice do
+    # arquivo. A construção é retomável e pula em silêncio o que já existe:
+    # numa retomada em 42/78, dividir o tempo decorrido por 42 trataria 42
+    # arquivos pulados em milissegundos como se tivessem sido processados, e a
+    # estimativa saía ~5x otimista (medido: 3 min no lugar de 15).
+    #
+    # Cada arquivo processado imprime uma linha "[n/N]"; os pulados não
+    # imprimem nada. Contar essas linhas dá o denominador certo.
+    processados = sum(1 for l in linhas if _RE_ITEM.search(l))
+
+    # Só a partir do terceiro: com um ou dois, a média ainda carrega o custo de
+    # partida (conexão, materialização dos dicionários) e produziria uma
+    # estimativa absurda logo na primeira olhada.
+    segundos_restantes = None
+    if iniciado_em and processados >= 3:
+        decorrido = time.time() - iniciado_em
+        segundos_restantes = round(decorrido / processados * (total - atual))
+
+    return {"atual": atual, "total": total, "pct": pct, "tabela": tabela,
+            "segundos_restantes": segundos_restantes}
+
+
 def status() -> dict:
     """Estado atual do processo controlado pelo painel, para exibir no dashboard."""
     global _codigo_saida, _finalizado_em
@@ -288,6 +362,10 @@ def status() -> dict:
             adotado = _adotar_job_ativo()
             if adotado:
                 caminho_adotado = Path(adotado["log"])
+                # A progressão sai do log inteiro, não da cauda exibida: o
+                # último "[n/N]" pode ter rolado para fora das 60 linhas quando
+                # o job imprime muita coisa entre um arquivo e outro.
+                cauda = _tail(caminho_adotado, 60)
                 return {
                     "rodando": True,
                     "adotado": True,
@@ -298,7 +376,9 @@ def status() -> dict:
                     "iniciado_em": adotado.get("iniciado_em"),
                     "finalizado_em": None,
                     "codigo_saida": None,
-                    "log_tail": _tail(caminho_adotado, 60),
+                    "log_tail": cauda,
+                    "progresso": _progresso(_linhas_log(caminho_adotado),
+                                            adotado.get("iniciado_em")),
                 }
 
         # Fora de uma execução ativa, ainda mostra a cauda do último log —
@@ -315,4 +395,8 @@ def status() -> dict:
             "finalizado_em": _finalizado_em,
             "codigo_saida": _codigo_saida,
             "log_tail": _tail(caminho, 60) if caminho else [],
+            # Só enquanto roda: depois de terminar, um "[78/78]" congelado na
+            # tela pareceria um job ainda em andamento.
+            "progresso": (_progresso(_linhas_log(caminho), _iniciado_em)
+                          if rodando and caminho else None),
         }

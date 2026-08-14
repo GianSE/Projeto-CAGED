@@ -582,7 +582,28 @@ function atualizarProcesso(proc) {
     const decorrido = Math.round((Date.now() / 1000) - proc.iniciado_em);
     const min = Math.floor(decorrido / 60);
     const tempo = min >= 1 ? `${min} min` : `${decorrido}s`;
-    statusTxt.innerHTML = `<span style="color:var(--good); font-weight:600;">● ${proc.tipo || 'job'} rodando</span> — PID ${proc.pid} · há ${tempo}`;
+    let html = `<span style="color:var(--good); font-weight:600;">● ${proc.tipo || 'job'} rodando</span> — PID ${proc.pid} · há ${tempo}`;
+
+    // Progressão do arquivo atual, lida do log pelo backend. Fica logo abaixo
+    // do status porque é a informação que se olha com mais frequência durante
+    // uma carga longa — mais até que a cauda do log.
+    const pr = proc.progresso;
+    if (pr) {
+      const eta = pr.segundos_restantes === null || pr.segundos_restantes === undefined
+        ? ''
+        : ` · faltam ~${pr.segundos_restantes >= 60
+              ? Math.round(pr.segundos_restantes / 60) + ' min'
+              : pr.segundos_restantes + 's'}`;
+      html += `
+        <div style="margin-top:10px;">
+          <div class="contagem" style="margin-bottom:2px;">
+            <span><strong>${pr.tabela || ''}</strong> — arquivo ${fmt(pr.atual)} de ${fmt(pr.total)}${eta}</span>
+            <span>${pr.pct}%</span>
+          </div>
+          <div class="barra-track"><div class="barra-fill barra-completo" style="width:${pr.pct}%"></div></div>
+        </div>`;
+    }
+    statusTxt.innerHTML = html;
   } else {
     btnPlay.style.display = 'inline-block';
     btnsJob.forEach(b => b.style.display = 'inline-block');
