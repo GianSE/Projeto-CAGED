@@ -272,6 +272,20 @@ def _copy_particionado(destino_s3: str, stem: str, query: str) -> str:
 
     OVERWRITE_OR_IGNORE é obrigatório aqui: a partir do segundo arquivo a pasta
     de destino já existe, e sem ele o DuckDB aborta com "directory not empty".
+
+    O mês vai SEM zero à esquerda (mes_particao=1, não =01), de propósito. Com
+    o zero as pastas listariam em ordem bonita (01, 02, ... 12) em vez de 1, 10,
+    11, 12, 2..., mas o DuckDB infere o tipo da partição a partir do texto do
+    diretório: "01" vira VARCHAR, "1" vira BIGINT. Medido, com VARCHAR:
+
+        WHERE mes_particao <= 6
+        -> Binder Error: Cannot compare VARCHAR and INTEGER_LITERAL
+
+    Igualdade continuaria funcionando nos dois formatos, mas filtro por faixa
+    ("primeiro semestre") quebraria — e num dataset de mercado de trabalho esse
+    é um recorte óbvio. O ganho do padding é cosmético; o custo é semântico.
+    Também mantém coerência com o bronze e com a silver-ti, que já usam o mês
+    sem padding.
     """
     return f"""
         COPY ({query}) TO '{destino_s3}' (
