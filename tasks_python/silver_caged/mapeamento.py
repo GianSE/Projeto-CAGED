@@ -47,11 +47,25 @@ MAPA_CAGED_ANTIGO = {
     "cnae_10_classe": {"estilo": "colon", "aba": "classe_10"},
     "cnae_20_classe": {"estilo": "colon", "aba": "classe_20"},
     "cnae_20_subclas": {"estilo": "colon", "aba": "subclasse"},
-    "bairros_sp": {"estilo": "colon", "aba": "bairro_sp"},
-    "bairros_fortaleza": {"estilo": "colon", "aba": "bairro_fort"},
-    "bairros_rj": {"estilo": "colon", "aba": "bairro_rj"},
-    "distritos_sp": {"estilo": "colon", "aba": "distrito_sp"},
-    "regioes_adm_df": {"estilo": "colon", "aba": "reg_adm_df"},
+    # Estas cinco NÃO são "codigo:descricao" como as demais abas do CAGED
+    # antigo — conferido aba a aba. As de bairro trazem três colunas
+    # (Categorias | Descrição | Valor na Fonte) com o código na TERCEIRA; as de
+    # distrito e região administrativa trazem duas, com o código na PRIMEIRA.
+    #
+    # Marcadas como "colon" elas produziam view VAZIA (o gerador procura ':' e
+    # não acha), e view vazia faz o construtor pular o join em silêncio: a
+    # coluna saía sem par _descricao e nada no log indicava perda. Foi assim
+    # que passaram despercebidas até a conferência de cobertura por coluna.
+    "bairros_sp": {"estilo": "titulo_codigo", "aba": "bairro_sp",
+                   "col_cod": "col_02", "col_desc": "col_01"},
+    "bairros_fortaleza": {"estilo": "titulo_codigo", "aba": "bairro_fort",
+                          "col_cod": "col_02", "col_desc": "col_01"},
+    "bairros_rj": {"estilo": "titulo_codigo", "aba": "bairro_rj",
+                   "col_cod": "col_02", "col_desc": "col_01"},
+    "distritos_sp": {"estilo": "titulo_codigo", "aba": "distrito_sp",
+                     "col_cod": "col_00", "col_desc": "col_01"},
+    "regioes_adm_df": {"estilo": "titulo_codigo", "aba": "reg_adm_df",
+                       "col_cod": "col_00", "col_desc": "col_01"},
 }
 
 # --- geografia regional: as 11 colunas da aba "outros" ---------------------
