@@ -141,6 +141,21 @@ def _lancar(comando: list[str], rotulo: str, tipo: str) -> dict:
         if _processo is not None and _processo.poll() is None:
             return {"ok": False, "erro": f"Já existe um job em andamento ({_tipo})."}
 
+        # A trava também precisa enxergar job ADOTADO, não só o handle em
+        # memória. Reiniciar o painel zera `_processo`, e sem esta checagem o
+        # próximo disparo passava por cima de uma carga em andamento.
+        #
+        # Aconteceu de verdade: um build de silver subiu enquanto uma
+        # publicação de 6,4 GB estava no ar, e os dois disputaram disco e rede
+        # por três horas — o tempo por arquivo passou de 2,5 min para 9,5 min.
+        # Nada quebrou, mas a garantia que justifica a trava tinha deixado de
+        # valer justamente no caso em que ela mais importa.
+        adotado = _adotar_job_ativo()
+        if adotado:
+            return {"ok": False,
+                    "erro": f"Já existe um job em andamento "
+                            f"({adotado.get('tipo', 'job')}, PID {adotado['pid']})."}
+
         DIR_LOGS_EXECUCOES.mkdir(parents=True, exist_ok=True)
         carimbo = datetime.now().strftime("%Y%m%d_%H%M%S")
         caminho_log = DIR_LOGS_EXECUCOES / f"{carimbo}_{rotulo}.log"
