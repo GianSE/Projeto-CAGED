@@ -178,6 +178,11 @@
     <div style="display:flex; align-items:center; gap:14px;">
       <span id="pill-minio" class="pill pill-muted"><span class="dot"></span>verificando…</span>
       <a class="link" href="http://localhost:9001" target="_blank" rel="noopener">Console MinIO ↗</a>
+      <!-- href vem do backend (hf_status.REPO_PADRAO), não fixo aqui: assim o
+           link nunca aponta para um repositório diferente do que as barras de
+           progresso estão medindo. -->
+      <a id="link-hf" class="link" href="#" target="_blank" rel="noopener"
+         style="display:none;">🤗 Dataset ↗</a>
     </div>
   </header>
 
@@ -724,7 +729,21 @@ async function atualizar() {
     // O repositório vem do backend (variável de ambiente), não fica fixo no
     // JS: assim o botão de publicar nunca aponta para um repo diferente do
     // que as barras de progresso estão medindo.
-    if (dados.hf && dados.hf.repo) ultimoRepoHF = dados.hf.repo;
+    if (dados.hf && dados.hf.repo) {
+      ultimoRepoHF = dados.hf.repo;
+      const link = document.getElementById('link-hf');
+      // Só aparece depois que existe repositório publicado — um link para uma
+      // página 404 seria pior que link nenhum.
+      if (dados.hf.ok && dados.hf.url) {
+        link.href = dados.hf.url;
+        link.textContent = `🤗 ${dados.hf.repo.split('/').pop()} ↗`;
+        link.title = `${dados.hf.repo} — ${fmt(dados.hf.arquivos)} arquivo(s), ` +
+                     `${(dados.hf.bytes / 1e9).toFixed(2)} GB publicados`;
+        link.style.display = 'inline';
+      } else {
+        link.style.display = 'none';
+      }
+    }
     atualizarMinio(dados.minio);
     atualizarHeartbeat(dados.heartbeat, dados.processo);
     atualizarTabelas(dados.tabelas);
