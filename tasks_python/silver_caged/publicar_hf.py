@@ -220,7 +220,10 @@ def _tabela_de_arquivos(destino: Path, tabelas: list[str]) -> str:
     publicação parcial — e ela é parcial por natureza enquanto alguma silver
     ainda está sendo construída.
     """
-    linhas = ["| Tabela | Conteúdo | Arquivos | Tamanho |", "|---|---|---|---|"]
+    linhas = ["| Tabela | Conteúdo | Período | Arquivos | Tamanho |",
+              "|---|---|---|---|---|"]
+    avisos = []
+
     for tabela in tabelas:
         pasta = destino / tabela
         if not pasta.exists():
@@ -228,10 +231,86 @@ def _tabela_de_arquivos(destino: Path, tabelas: list[str]) -> str:
         arquivos = list(pasta.rglob("*.parquet"))
         if not arquivos:
             continue
+
         tam = sum(a.stat().st_size for a in arquivos)
+        periodo, faltando = _cobertura_anual(pasta)
+        marca = " ⚠️" if faltando else ""
         linhas.append(f"| `{tabela}/` | {DESCRICAO_TABELA.get(tabela, '—')} | "
-                      f"{len(arquivos)} | {tam / 1e9:.2f} GB |")
+                      f"{periodo}{marca} | {len(arquivos)} | {tam / 1e9:.2f} GB |")
+
+        # Lacuna no meio da série precisa ser declarada, não descoberta: quem
+        # somar o período obteria um total menor que o real sem nenhum sinal.
+        if faltando:
+            lista = ", ".join(faltando[:12]) + (" …" if len(faltando) > 12 else "")
+            avisos.append(f"- `{tabela}` — {len(faltando)} competência(s) ausente(s) "
+                          f"dentro do período: {lista}")
+
+    if avisos:
+        linhas.append("")
+        linhas.append("> ⚠️ **Lacunas na série**")
+        linhas.append(">")
+        linhas += [f"> {a}" for a in avisos]
+        linhas.append(">")
+        linhas.append("> O período indicado é o que está publicado; o último mês de "
+                      "cada tabela avança conforme novas cargas entram.")
+
     return "\n".join(linhas)
+
+
+def _cobertura_anual(pasta: Path) -> tuple[str, list[str]]:
+    """
+    Período coberto e as competências que faltam NO MEIO dele.
+
+    A partição hive é a fonte da verdade: as competências saem das próprias
+    pastas ano_particao=/mes_particao=.
+
+    A regra é a mesma já usada no painel (painel/app.py:_cobertura), e a parte
+    que importa é o "no meio". Contar "menos de 12 meses no ano = parcial"
+    parece razoável e está errado: acusaria as BORDAS naturais da série como
+    buraco — o Novo CAGED começa em fevereiro de 2020, e o último ano publicado
+    está sempre incompleto porque o ano ainda não acabou. Os dois virariam
+    alarme falso num card público, que é pior do que não avisar.
+
+    Buraco de verdade é competência ausente ENTRE a primeira e a última — aí
+    sim quem somar o período obtém um total menor sem perceber.
+
+    Partições sem mês numérico (mes_particao=__HIVE_DEFAULT_PARTITION__) são as
+    safras anuais do caged_ajustes, anuais já na origem: entram no período, não
+    na checagem de lacuna mensal.
+    """
+    competencias: set[tuple[int, int]] = set()
+    anos_sem_mes: set[int] = set()
+
+    for arquivo in pasta.rglob("*.parquet"):
+        partes = {p.split("=")[0]: p.split("=")[1] for p in arquivo.parts if "=" in p}
+        ano = partes.get("ano_particao", "")
+        if not ano.isdigit():
+            continue
+        mes = partes.get("mes_particao", "")
+        if mes.isdigit():
+            competencias.add((int(ano), int(mes)))
+        else:
+            anos_sem_mes.add(int(ano))
+
+    if not competencias:
+        if not anos_sem_mes:
+            return "—", []
+        anos = sorted(anos_sem_mes)
+        return (f"{anos[0]}–{anos[-1]}" if anos[0] != anos[-1] else str(anos[0])), []
+
+    ordenadas = sorted(competencias)
+    inicio, fim = ordenadas[0], ordenadas[-1]
+    esperadas = {
+        (a, m)
+        for a in range(inicio[0], fim[0] + 1)
+        for m in range(1, 13)
+        if inicio <= (a, m) <= fim
+    }
+    faltando = [f"{a}-{m:02d}" for a, m in sorted(esperadas - competencias)]
+
+    todos_anos = sorted({a for a, _ in competencias} | anos_sem_mes)
+    periodo = f"{todos_anos[0]}-{inicio[1]:02d} → {todos_anos[-1]}-{fim[1]:02d}"
+    return periodo, faltando
 
 
 def _credencial() -> str | None:
