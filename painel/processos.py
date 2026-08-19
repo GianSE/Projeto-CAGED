@@ -341,10 +341,16 @@ def _progresso_envio(linhas: list[str]) -> dict | None:
     Avanço do upload para o Hugging Face.
 
     Precisa existir porque a barra "Hugging Face" de cada tabela mede o que já
-    foi COMMITADO no repositório, e o upload_large_folder transfere primeiro e
-    commita em lotes: durante a maior parte do envio aquela barra fica em zero
-    e depois salta. Sem isto, a fase mais demorada da publicação não teria
-    nenhum retorno visível.
+    está COMMITADO no repositório, e o upload_large_folder transfere tudo antes
+    de commitar. Medido num envio de 6,17 GB: com 4,78 GB já transferidos, o
+    repositório continuava intocado (lastModified e contagem de commits
+    inalterados). Ou seja, aquela barra fica em zero durante praticamente todo o
+    envio e só então salta — sem esta aqui, a fase mais longa da publicação não
+    teria retorno visível nenhum.
+
+    O contador "(a / b)" do relatório é de arquivos ENVIADOS, não commitados —
+    conferido contra a API do Hub, que não registrava commit algum enquanto ele
+    já marcava 6.
 
     De trás para frente: interessa o último relatório impresso.
     """
