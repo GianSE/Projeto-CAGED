@@ -134,7 +134,12 @@ formal — a métrica-título do CAGED.
 
 ## Como consultar
 
-Sem baixar nada, direto do Hub:
+**Restrinja o glob ao período que você quer.** O `hf://` resolve `**` listando
+cada pasta de partição por uma chamada de API, e esta base tem centenas delas —
+um glob aberto sobre a tabela inteira leva a `HTTP 429 (rate limit)` antes de
+ler qualquer dado. Isso é limite de *listagem*, não dos arquivos.
+
+Um ano (o caso comum — o glob cobre 12 pastas):
 
 ```python
 import duckdb
@@ -145,16 +150,40 @@ duckdb.sql('''
            count(*) FILTER (WHERE saldomovimentacao = 1) AS admissoes,
            sum(saldomovimentacao)                        AS saldo
     FROM read_parquet(
-        'hf://datasets/{repo}/caged_mov/**/*.parquet',
+        'hf://datasets/{repo}/caged_mov/ano_particao=2025/**/*.parquet',
         hive_partitioning = true
     )
-    WHERE ano_particao = 2025
     GROUP BY 1 ORDER BY saldo DESC
 ''').show()
 ```
 
-O `WHERE ano_particao = 2025` é resolvido pelo nome das pastas: os outros anos
-nem chegam a ser baixados.
+Um mês específico, sem listagem nenhuma — aponte o arquivo direto:
+
+```python
+BASE = "https://huggingface.co/datasets/{repo}/resolve/main"
+
+duckdb.sql(f'''
+    SELECT * FROM read_parquet(
+        '{{BASE}}/caged_old/ano_particao=2019/mes_particao=6/caged_old_201906_0.parquet'
+    ) LIMIT 10
+''').show()
+```
+
+Vários anos ou a base inteira: **baixe primeiro**, é mais rápido e não esbarra
+em rate limit.
+
+```python
+from huggingface_hub import snapshot_download
+
+caminho = snapshot_download(
+    repo_id="{repo}", repo_type="dataset",
+    allow_patterns="caged_mov/*",      # ou "*" para tudo
+)
+duckdb.sql(f"SELECT count(*) FROM read_parquet('{{caminho}}/caged_mov/**/*.parquet', hive_partitioning=true)")
+```
+
+Em todos os casos o filtro por `ano_particao` / `mes_particao` é resolvido pelo
+nome das pastas: as partições fora do filtro não são baixadas.
 
 ## Licença e citação
 
@@ -331,6 +360,8 @@ def main() -> int:
     p.add_argument("--privado", action="store_true")
     p.add_argument("--so-espelhar", action="store_true", help="Só baixa do MinIO, não envia")
     p.add_argument("--so-subir", action="store_true", help="Só envia o que já está no espelho")
+    p.add_argument("--so-card", action="store_true",
+                   help="Regera e envia apenas o README do dataset, sem tocar nos parquets")
     args = p.parse_args()
 
     DIR_LOCAL.mkdir(parents=True, exist_ok=True)
@@ -374,6 +405,20 @@ def main() -> int:
               .replace("{tabela_arquivos}", _tabela_de_arquivos(DIR_LOCAL, list(mp.TODAS_TABELAS))),
         encoding="utf-8",
     )
+
+    if args.so_card:
+        # Corrigir uma frase do card não deveria custar uma varredura de 12 GB:
+        # o upload_large_folder reexamina a pasta inteira antes de decidir o que
+        # enviar. Um upload_file resolve em segundos.
+        api.upload_file(
+            path_or_fileobj=str(DIR_LOCAL / "README.md"),
+            path_in_repo="README.md",
+            repo_id=args.repo,
+            repo_type="dataset",
+            commit_message="Atualiza o card do dataset",
+        )
+        print(f"\n🏁 Card atualizado: https://huggingface.co/datasets/{args.repo}")
+        return 0
 
     api.upload_large_folder(
         folder_path=str(DIR_LOCAL),
