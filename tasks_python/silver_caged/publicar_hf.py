@@ -33,6 +33,19 @@ import os
 import sys
 from pathlib import Path
 
+# Desliga as barras de progresso por arquivo do huggingface_hub, ANTES de
+# qualquer import dele.
+#
+# Elas redesenham com retorno de carro dezenas de vezes por segundo, e como a
+# saída do job vai para um arquivo de log (não para um terminal), cada redesenho
+# é gravado: um upload de 6 GB produzia mais de 6 MB de log em minutos. O
+# relatório resumido que o painel usa para a barra de progresso sai só a cada
+# 60 s e ficava soterrado nesse ruído.
+#
+# `print_report=True` no upload_large_folder continua valendo — é ele que
+# imprime "Processing Files (a / b)", que é o que interessa.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+
 from extracao_ftp.config_extracao import (
     BUCKET_SILVER,
     MINIO_ACCESS_KEY,

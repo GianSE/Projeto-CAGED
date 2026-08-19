@@ -256,12 +256,9 @@ def parar() -> dict:
 def _tail(caminho: Path, n_linhas: int = 40) -> list[str]:
     if not caminho.exists():
         return []
-    try:
-        with open(caminho, "r", encoding="utf-8", errors="replace") as f:
-            linhas = f.readlines()
-        return [l.rstrip("\n") for l in linhas[-n_linhas:]]
-    except Exception:
-        return []
+    # Mesma normalização do _linhas_log: sem ela a barra de progresso do upload
+    # chega ao painel como uma única linha quilométrica.
+    return [l for l in _linhas_log(caminho) if l.strip()][-n_linhas:]
 
 
 def listar_execucoes() -> list[dict]:
@@ -281,16 +278,92 @@ _RE_TABELA = re.compile(r"(?:SILVER|BRONZE|PUBLICANDO):\s*(\w+)")
 _RE_ENVIO = re.compile(r"(\d+) arquivo\(s\), ([\d.]+) GB")
 
 
-def _linhas_log(caminho: Path) -> list[str]:
-    """Log inteiro. São centenas de KB no pior caso — barato o bastante a cada refresh."""
+_RE_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+# Só o fim do arquivo interessa, e o upload do Hugging Face escreve barra de
+# progresso do tqdm: dezenas de MB de redesenho num log só. Ler o arquivo
+# inteiro a cada refresh de 5 s seria desperdício puro.
+_MAX_BYTES_LOG = 2 * 1024 * 1024
+
+
+def _linhas_log(caminho: Path, max_bytes: int = _MAX_BYTES_LOG) -> list[str]:
+    """
+    Cauda do log, normalizada em linhas de verdade.
+
+    O tqdm (que o upload_large_folder usa) redesenha a mesma linha com retorno
+    de carro em vez de quebra de linha, e colore com escapes ANSI. Sem separar
+    também pelo retorno de carro, todo o relatório de envio vira UMA linha de
+    megabytes — ilegível na tela e inútil para qualquer regex de progresso.
+    """
     try:
-        with open(caminho, "r", encoding="utf-8", errors="replace") as f:
-            return f.read().splitlines()
+        with open(caminho, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - max_bytes))
+            bruto = f.read().decode("utf-8", errors="replace")
     except Exception:
         return []
 
+    return [_RE_ANSI.sub("", l).rstrip() for l in re.split(r"[\r\n]", bruto)]
 
-def _progresso(linhas: list[str], iniciado_em: float | None) -> dict | None:
+
+# Janela maior, só para achar o relatório de envio: ele sai a cada 60 s, e um
+# log escrito com as barras de progresso ligadas empilha megabytes de redesenho
+# entre um relatório e o outro. Publicações novas não precisam disso (o
+# publicador desliga as barras), mas logs já gravados sim.
+_MAX_BYTES_ENVIO = 32 * 1024 * 1024
+_TTL_ENVIO = 20
+_cache_envio: tuple[float, dict | None] = (0.0, None)
+
+
+def _envio_do_log(caminho: Path) -> dict | None:
+    """Progresso do upload, relido no máximo a cada _TTL_ENVIO segundos."""
+    global _cache_envio
+
+    agora = time.time()
+    if agora - _cache_envio[0] < _TTL_ENVIO:
+        return _cache_envio[1]
+
+    achado = _progresso_envio(_linhas_log(caminho, _MAX_BYTES_ENVIO))
+    _cache_envio = (agora, achado)
+    return achado
+
+
+# Relatório do upload_large_folder. "Processing Files (a / b)" traz o avanço
+# real do envio inteiro; "New Data Upload" é só o lote em trânsito no momento.
+_RE_ENVIO_TOTAL = re.compile(
+    r"Processing Files\s*\((\d+)\s*/\s*(\d+)\)\s*:\s*(\d+)%.*?\|\s*"
+    r"([\d.]+\s*\w+)\s*/\s*([\d.]+\s*\w+)(?:,\s*([\d.]+\s*\w+/s))?"
+)
+
+
+def _progresso_envio(linhas: list[str]) -> dict | None:
+    """
+    Avanço do upload para o Hugging Face.
+
+    Precisa existir porque a barra "Hugging Face" de cada tabela mede o que já
+    foi COMMITADO no repositório, e o upload_large_folder transfere primeiro e
+    commita em lotes: durante a maior parte do envio aquela barra fica em zero
+    e depois salta. Sem isto, a fase mais demorada da publicação não teria
+    nenhum retorno visível.
+
+    De trás para frente: interessa o último relatório impresso.
+    """
+    for linha in reversed(linhas):
+        m = _RE_ENVIO_TOTAL.search(linha)
+        if m:
+            return {
+                "arquivos": int(m.group(1)),
+                "arquivos_total": int(m.group(2)),
+                "pct": int(m.group(3)),
+                "enviado": m.group(4).strip(),
+                "tamanho_total": m.group(5).strip(),
+                "velocidade": (m.group(6) or "").strip() or None,
+            }
+    return None
+
+
+def _progresso(linhas: list[str], iniciado_em: float | None,
+               caminho: Path | None = None) -> dict | None:
     """
     Progressão do job a partir do log que ele já imprime.
 
@@ -318,8 +391,16 @@ def _progresso(linhas: list[str], iniciado_em: float | None) -> dict | None:
         if atual is not None and tabela is not None:
             break
 
+    # Com o caminho em mãos, a busca do relatório de envio usa a janela larga e
+    # cacheada; sem ele, cai para o que já está nas linhas recebidas.
+    envio = _envio_do_log(caminho) if caminho else _progresso_envio(linhas)
+
     if atual is None or not total:
-        return None
+        # Sem "[n/N]" ainda, mas já enviando: é o caso da publicação, cujo
+        # espelhamento pode estar todo pulado (nada a baixar) e que passa
+        # direto para o upload.
+        return {"atual": None, "total": None, "pct": None, "tabela": None,
+                "segundos_restantes": None, "envio": envio} if envio else None
 
     pct = min(100, round(atual / total * 100))
 
@@ -342,7 +423,7 @@ def _progresso(linhas: list[str], iniciado_em: float | None) -> dict | None:
         segundos_restantes = round(decorrido / processados * (total - atual))
 
     return {"atual": atual, "total": total, "pct": pct, "tabela": tabela,
-            "segundos_restantes": segundos_restantes}
+            "segundos_restantes": segundos_restantes, "envio": envio}
 
 
 def status() -> dict:
@@ -378,7 +459,8 @@ def status() -> dict:
                     "codigo_saida": None,
                     "log_tail": cauda,
                     "progresso": _progresso(_linhas_log(caminho_adotado),
-                                            adotado.get("iniciado_em")),
+                                            adotado.get("iniciado_em"),
+                                            caminho_adotado),
                 }
 
         # Fora de uma execução ativa, ainda mostra a cauda do último log —
@@ -397,6 +479,6 @@ def status() -> dict:
             "log_tail": _tail(caminho, 60) if caminho else [],
             # Só enquanto roda: depois de terminar, um "[78/78]" congelado na
             # tela pareceria um job ainda em andamento.
-            "progresso": (_progresso(_linhas_log(caminho), _iniciado_em)
+            "progresso": (_progresso(_linhas_log(caminho), _iniciado_em, caminho)
                           if rodando and caminho else None),
         }

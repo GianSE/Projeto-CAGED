@@ -588,7 +588,7 @@ function atualizarProcesso(proc) {
     // do status porque é a informação que se olha com mais frequência durante
     // uma carga longa — mais até que a cauda do log.
     const pr = proc.progresso;
-    if (pr) {
+    if (pr && pr.pct !== null && pr.pct !== undefined) {
       const eta = pr.segundos_restantes === null || pr.segundos_restantes === undefined
         ? ''
         : ` · faltam ~${pr.segundos_restantes >= 60
@@ -601,6 +601,23 @@ function atualizarProcesso(proc) {
             <span>${pr.pct}%</span>
           </div>
           <div class="barra-track"><div class="barra-fill barra-completo" style="width:${pr.pct}%"></div></div>
+        </div>`;
+    }
+    // Envio ao Hugging Face. Barra própria porque as barras "Hugging Face" dos
+    // cards medem o que já foi COMMITADO no repositório, e o upload transfere
+    // primeiro e commita em lotes — elas ficam em zero durante quase todo o
+    // envio e depois saltam. Esta aqui mostra a transferência em si.
+    const en = pr && pr.envio;
+    if (en) {
+      const vel = en.velocidade ? ` · ${en.velocidade}` : '';
+      html += `
+        <div style="margin-top:10px;">
+          <div class="contagem" style="margin-bottom:2px;">
+            <span>🤗 enviando — ${en.enviado} de ${en.tamanho_total}${vel}
+              · ${fmt(en.arquivos)}/${fmt(en.arquivos_total)} arquivo(s) commitado(s)</span>
+            <span>${en.pct}%</span>
+          </div>
+          <div class="barra-track"><div class="barra-fill barra-hf" style="width:${en.pct}%"></div></div>
         </div>`;
     }
     statusTxt.innerHTML = html;
