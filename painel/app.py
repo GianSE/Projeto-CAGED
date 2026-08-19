@@ -14,14 +14,25 @@ Uso (a partir da raiz do projeto):
 import csv
 import re
 import shutil
+import sys
 import threading
 import time
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
 
-# O caminho para tasks_python/ é preparado em painel/__init__.py, que roda
-# antes de qualquer coisa aqui.
+# `python -m painel.app` importa o pacote, e painel/__init__.py prepara o
+# caminho para tasks_python/ antes de qualquer coisa aqui.
+#
+# Já `python app.py` executa este arquivo como script solto: o pacote nunca é
+# importado, o __init__ nunca roda, e os imports de domínio abaixo falhavam com
+# "No module named 'extracao_ftp'". As duas linhas seguintes cobrem esse caso —
+# põem a raiz do projeto no caminho e importam o pacote explicitamente, o que
+# dispara o mesmo bootstrap. Sob `-m` são no-op, então as duas formas de
+# iniciar o painel passam a funcionar.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import painel  # noqa: F401,E402  (importado só para rodar o bootstrap de caminho)
+
 from extracao_ftp import heartbeat
 from extracao_ftp.catalogo import DATASETS
 from extracao_ftp.config_extracao import (
