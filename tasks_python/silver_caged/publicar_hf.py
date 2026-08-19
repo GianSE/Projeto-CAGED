@@ -170,7 +170,11 @@ def espelhar(fs, tabelas: list[str], destino: Path) -> tuple[int, int]:
             print(f"   ⏭️  {tabela}: nada na silver ainda")
             continue
 
-        print(f"   📥 {tabela}: {len(arquivos)} arquivo(s)")
+        # "PUBLICANDO: <tabela>" e "[n/N]" não são enfeite: é o formato que o
+        # painel lê para montar a barra de progressão do job (ver
+        # painel/processos.py:_progresso). O log é a única fonte de progresso,
+        # então ele precisa falar essa língua.
+        print(f"   📥 PUBLICANDO: {tabela}  ({len(arquivos)} arquivo(s))")
         for n, remoto in enumerate(arquivos, start=1):
             relativo = remoto.split(f"{BUCKET_SILVER}/", 1)[1]
             local = destino / relativo
@@ -185,8 +189,12 @@ def espelhar(fs, tabelas: list[str], destino: Path) -> tuple[int, int]:
             local.parent.mkdir(parents=True, exist_ok=True)
             fs.get(remoto, str(local))
             baixados += 1
-            if baixados % 100 == 0:
-                print(f"      {n}/{len(arquivos)} — {baixados} baixado(s)")
+            # Uma linha por arquivo BAIXADO; os pulados ficam mudos, igual ao
+            # construtor da silver. É o que faz a estimativa de tempo do painel
+            # medir a velocidade real desta execução, e não contar como
+            # trabalho os arquivos que já estavam no espelho.
+            print(f"      [{n}/{len(arquivos)}] ⬇️  {local.name}  "
+                  f"({tamanho / 1e6:.1f} MB)")
 
     return baixados, pulados
 
@@ -271,7 +279,7 @@ def main() -> int:
         CARTAO.replace("{repo_ti}", args.repo_ti)
               .replace("{url_ti}", f"https://huggingface.co/datasets/{args.repo_ti}")
               .replace("{repo}", args.repo)
-              .replace("{tabela_arquivos}", _tabela_de_arquivos(DIR_LOCAL, args.tabela)),
+              .replace("{tabela_arquivos}", _tabela_de_arquivos(DIR_LOCAL, list(mp.TODAS_TABELAS))),
         encoding="utf-8",
     )
 

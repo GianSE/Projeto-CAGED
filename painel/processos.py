@@ -277,7 +277,7 @@ def listar_execucoes() -> list[dict]:
 
 
 _RE_ITEM = re.compile(r"\[(\d+)/(\d+)\]")
-_RE_TABELA = re.compile(r"(?:SILVER|BRONZE):\s*(\w+)")
+_RE_TABELA = re.compile(r"(?:SILVER|BRONZE|PUBLICANDO):\s*(\w+)")
 _RE_ENVIO = re.compile(r"(\d+) arquivo\(s\), ([\d.]+) GB")
 
 
