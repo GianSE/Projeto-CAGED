@@ -55,7 +55,15 @@ from extracao_ftp.config_extracao import (
 )
 from silver_caged import mapeamento as mp
 
-DIR_LOCAL = Path(__file__).resolve().parents[2] / "publicacao" / "completo"
+RAIZ_PUBLICACAO = Path(__file__).resolve().parents[2] / "publicacao"
+
+# Espelho local por camada. São datasets separados no Hub, e misturá-los numa
+# pasta só faria o upload_large_folder enviar o CAGED junto com a RAIS.
+DIRS = {"caged": RAIZ_PUBLICACAO / "completo", "rais": RAIZ_PUBLICACAO / "rais"}
+
+# Reatribuído em main() conforme --camada. Global porque o módulo inteiro já o
+# usava assim; trocar para parâmetro mexeria em cinco assinaturas sem ganho.
+DIR_LOCAL = DIRS["caged"]
 
 DESCRICAO_TABELA = {
     "caged_mov": "Movimentações do Novo CAGED (2020+)",
@@ -63,6 +71,8 @@ DESCRICAO_TABELA = {
     "caged_exc": "Exclusões de movimentações (Novo CAGED)",
     "caged_old": "CAGED antigo — CAGEDEST (2007–2019)",
     "caged_ajustes": "Ajustes e declarações fora do prazo (CAGED antigo)",
+    "rais_estab": "Estabelecimentos declarantes da RAIS (um registro por CNPJ/ano)",
+    "rais_vinc": "Vínculos empregatícios da RAIS (um registro por vínculo/ano)",
 }
 
 CARTAO = """---
@@ -242,6 +252,122 @@ Os dados originais são públicos (MTE/PDET). Este derivado é distribuído sob
 """
 
 
+CARTAO_RAIS = """---
+license: odc-by
+language:
+  - pt
+tags:
+  - brazil
+  - labor-market
+  - rais
+  - microdata
+pretty_name: RAIS — Microdados Traduzidos (mercado completo)
+size_categories:
+  - 100M<n<1B
+---
+
+# RAIS — Microdados Traduzidos (Brasil, mercado completo)
+
+Microdados da **RAIS** (Relação Anual de Informações Sociais, Ministério do
+Trabalho e Emprego) com os **códigos traduzidos** pelos dicionários oficiais do
+próprio MTE.
+
+Traduzir a RAIS é mais trabalhoso que o CAGED: o de/para está espalhado por
+**21 planilhas de layout**, uma por período, e várias têm abas de mesmo nome.
+Aqui esse cruzamento já está feito, com a origem de cada código registrada.
+
+> **RAIS não é CAGED.** A RAIS é uma declaração **anual** — uma foto do vínculo
+> em 31 de dezembro. O CAGED é o **fluxo** de admissões e desligamentos ao longo
+> do mês. Para o fluxo, veja [`{repo_caged}`]({url_caged}).
+
+## Origem
+
+`ftp.mtps.gov.br/pdet/microdados/RAIS` — dados públicos do PDET/MTE.
+Recorte publicado: **2007 em diante**, quando já vigoravam CNAE 2.0 e CBO 2002.
+Antes disso a fonte usa CNAE 1.0 e CBO 1994, taxonomias diferentes que não são
+comparáveis sem harmonização.
+
+## Tratamento aplicado
+
+1. **Códigos traduzidos** pelos dicionários oficiais do MTE: cada coluna
+   codificada ganhou uma `<coluna>_descricao` legível, **mantendo o código
+   original ao lado**.
+2. **Encoding detectado por arquivo** — o acervo mistura UTF-8 e Latin-1.
+3. **Campos numéricos tipados**: a fonte usa vírgula decimal, então
+   remuneração, tempo de emprego e idade vêm como número, não texto.
+
+## Estrutura
+
+Particionado em Hive por ano:
+
+```
+{{tabela}}/ano_particao=YYYY/*.parquet
+```
+
+Sem `mes_particao`: a RAIS não tem competência mensal. Em `rais_vinc` há
+**vários arquivos por ano**, um por região da fonte.
+
+{tabela_arquivos}
+
+## Métricas principais
+
+- `vinculo_ativo_3112` — vínculo ativo em 31/12. É o que se soma para obter o
+  **estoque** de empregos formais, e a diferença entre dois anos é o saldo.
+- `vl_remun_media_sm` / `vl_remun_dezembro_sm` — remuneração em **salários
+  mínimos**, que permite comparar anos sem deflacionar.
+- `vl_remun_media_nom` — remuneração nominal em reais **da época**; para série
+  temporal, deflacione ou use a versão em salários mínimos.
+- `tempo_emprego` — em meses.
+
+`rais_estab` traz um registro por estabelecimento e **não tem ocupação**: uma
+empresa não exerce CBO. Recortes por ocupação só são possíveis em `rais_vinc`.
+
+## Dimensões (`dicionarios.parquet`)
+
+Mesmo formato do dataset do CAGED: `tabela`, `coluna`, `codigo`, `descricao`,
+mais a procedência (`planilha`, `aba`, `caminho_ftp`, `extraido_em`). Cada
+código diz de qual das 21 planilhas de layout ele saiu — inclusive a subpasta,
+`estabelecimento/` ou `vínculos/`.
+
+```python
+duckdb.sql('''
+    SELECT codigo, descricao, caminho_ftp
+    FROM read_parquet('hf://datasets/{repo}/dicionarios.parquet')
+    WHERE tabela = 'rais_vinc' AND coluna = 'escolaridade_apos_2005'
+''').show()
+```
+
+## Como consultar
+
+**Restrinja o glob ao período que você quer.** O `hf://` resolve `**` listando
+cada pasta de partição por uma chamada de API; um glob aberto sobre a tabela
+inteira leva a `HTTP 429 (rate limit)` antes de ler qualquer dado.
+
+```python
+import duckdb
+
+duckdb.sql("INSTALL httpfs; LOAD httpfs;")
+duckdb.sql('''
+    SELECT cnae_20_subclasse_descricao AS setor,
+           sum(qtd_vinculos_ativos)    AS vinculos
+    FROM read_parquet(
+        'hf://datasets/{repo}/rais_estab/ano_particao=2019/*.parquet',
+        hive_partitioning = true
+    )
+    GROUP BY 1 ORDER BY vinculos DESC LIMIT 20
+''').show()
+```
+
+Para vários anos ou a base inteira, baixe antes com `snapshot_download` — é
+mais rápido e não esbarra em rate limit.
+
+## Licença e citação
+
+Os dados originais são públicos (MTE/PDET). Este derivado é distribuído sob
+**ODC-BY**: cite a fonte original e este tratamento.
+"""
+
+
 def _fs_minio():
     import s3fs
 
@@ -404,15 +530,38 @@ def _credencial() -> str | None:
 def main() -> int:
     p = argparse.ArgumentParser(description="Publica a silver completa do CAGED no Hugging Face.")
     p.add_argument("--repo", required=True, help="Destino no formato usuario/nome-do-dataset")
+    p.add_argument("--camada", choices=("caged", "rais"), default="caged",
+                   help="Qual dataset publicar. Muda espelho local, tabelas e card.")
     p.add_argument("--repo-ti", default="Gianpedro/caged-tecnologia",
-                   help="Dataset do recorte de TI, referenciado no card")
-    p.add_argument("--tabela", nargs="+", choices=mp.TODAS_TABELAS, default=list(mp.TODAS_TABELAS))
+                   help="Dataset do recorte de TI, referenciado no card do CAGED")
+    p.add_argument("--repo-caged", default="Gianpedro/caged-microdados-traduzidos",
+                   help="Dataset do CAGED, referenciado no card da RAIS")
+    # Sem `choices`: as tabelas válidas dependem da camada, que só é conhecida
+    # depois do parse. A validação acontece logo abaixo.
+    p.add_argument("--tabela", nargs="+", default=None)
     p.add_argument("--privado", action="store_true")
     p.add_argument("--so-espelhar", action="store_true", help="Só baixa do MinIO, não envia")
     p.add_argument("--so-subir", action="store_true", help="Só envia o que já está no espelho")
     p.add_argument("--so-card", action="store_true",
                    help="Regera e envia apenas o README do dataset, sem tocar nos parquets")
     args = p.parse_args()
+
+    global DIR_LOCAL
+    DIR_LOCAL = DIRS[args.camada]
+
+    if args.camada == "caged":
+        from silver_caged import mapeamento as mapa_camada
+        tabelas_validas = list(mapa_camada.TODAS_TABELAS)
+    else:
+        from silver_rais import mapeamento as mapa_camada
+        tabelas_validas = list(mapa_camada.TABELAS_RAIS)
+
+    args.tabela = args.tabela or tabelas_validas
+    invalidas = [t for t in args.tabela if t not in tabelas_validas]
+    if invalidas:
+        print(f"❌ Tabela inválida para a camada {args.camada}: {invalidas}")
+        print(f"   Válidas: {', '.join(tabelas_validas)}")
+        return 1
 
     DIR_LOCAL.mkdir(parents=True, exist_ok=True)
 
@@ -448,11 +597,16 @@ def main() -> int:
 
     # O card documenta o recorte para quem baixar os dados sem ter lido o
     # trabalho — e avisa que este NÃO é o dataset de TI.
+    if args.camada == "caged":
+        texto = (CARTAO.replace("{repo_ti}", args.repo_ti)
+                       .replace("{url_ti}", f"https://huggingface.co/datasets/{args.repo_ti}"))
+    else:
+        texto = (CARTAO_RAIS.replace("{repo_caged}", args.repo_caged)
+                            .replace("{url_caged}",
+                                     f"https://huggingface.co/datasets/{args.repo_caged}"))
     (DIR_LOCAL / "README.md").write_text(
-        CARTAO.replace("{repo_ti}", args.repo_ti)
-              .replace("{url_ti}", f"https://huggingface.co/datasets/{args.repo_ti}")
-              .replace("{repo}", args.repo)
-              .replace("{tabela_arquivos}", _tabela_de_arquivos(DIR_LOCAL, list(mp.TODAS_TABELAS))),
+        texto.replace("{repo}", args.repo)
+             .replace("{tabela_arquivos}", _tabela_de_arquivos(DIR_LOCAL, tabelas_validas)),
         encoding="utf-8",
     )
 
