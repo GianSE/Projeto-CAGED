@@ -86,7 +86,8 @@ def _listar_planilhas(cliente: ClienteFTP, pasta: str, recursivo: bool) -> list[
     return achados
 
 
-def _converter_planilha(caminho_local: Path, origem_slug: str, fs) -> int:
+def _converter_planilha(caminho_local: Path, origem_slug: str, fs,
+                        caminho_ftp: str = "") -> int:
     """Lê todas as abas de uma planilha e grava cada uma como parquet. Devolve nº de abas."""
     import pandas as pd
 
@@ -117,6 +118,13 @@ def _converter_planilha(caminho_local: Path, origem_slug: str, fs) -> int:
         df.columns = [f"col_{i:02d}" for i in range(len(df.columns))]
         df["aba_origem"] = str(nome_aba)
         df["planilha_origem"] = caminho_local.name
+        # Caminho REAL no FTP, gravado na hora em que o arquivo foi baixado.
+        #
+        # Sem isto, a procedencia so poderia ser reconstruida a partir do slug
+        # da pasta -- e para a RAIS, cuja varredura e recursiva, a subpasta
+        # (vinculos/ ou estabelecimento/) se perde. Um caminho quase certo e
+        # pior que nenhum: manda quem quer conferir procurar no lugar errado.
+        df["caminho_ftp"] = caminho_ftp
 
         # O nome da PLANILHA entra no caminho, não só o da pasta e o da aba.
         #
@@ -186,7 +194,7 @@ def extrair_dicionarios(cliente: ClienteFTP | None = None) -> None:
                 except Exception as e:
                     print(f"      ⚠️  Não consegui subir o original: {str(e)[:150]}")
 
-                abas = _converter_planilha(local, origem_slug, fs)
+                abas = _converter_planilha(local, origem_slug, fs, caminho_remoto)
                 if abas:
                     print(f"      ✅ {abas} aba(s) -> bronze/dicionarios/{origem_slug}/")
                     total_abas += abas

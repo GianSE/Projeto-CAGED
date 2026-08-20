@@ -55,8 +55,36 @@ def _fontes(camada: str):
     return cs, mp.TABELAS_RAIS, lambda con, fs, t, c: cs._mapa_traducao(fs, t, c)
 
 
+def _procedencia(con, caminho_parquet: str) -> tuple[str, str, str]:
+    """
+    De qual planilha, aba e caminho do FTP saiu este de/para.
+
+    Sem isto a dimensão diz "o código 1 é Branca" sem dizer onde conferir — e
+    como o arquivo publicado junta 126 de/para num só, a origem de cada linha
+    seria impossível de recuperar. `caminho_ftp` só existe nos dicionários
+    extraídos depois que passamos a gravá-lo; nos antigos volta vazio em vez de
+    quebrar a geração.
+    """
+    try:
+        colunas = {r[0] for r in con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{caminho_parquet}') LIMIT 0").fetchall()}
+        ftp = "any_value(caminho_ftp)" if "caminho_ftp" in colunas else "''"
+        planilha, aba, caminho = con.execute(f"""
+            SELECT any_value(planilha_origem), any_value(aba_origem), {ftp}
+            FROM read_parquet('{caminho_parquet}')
+        """).fetchone()
+    except Exception:
+        return "", "", ""
+
+    # O nome vem prefixado com o slug da pasta ("novo_caged__Layout ....xlsx"),
+    # que é detalhe de armazenamento nosso — quem procura no FTP quer o nome
+    # original do arquivo.
+    planilha = (planilha or "").split("__", 1)[-1]
+    return planilha, aba or "", caminho or ""
+
+
 def gerar(camada: str, destino: Path) -> Path | None:
-    from silver_caged.dicionarios import criar_view
+    from silver_caged.dicionarios import criar_view, _caminho
 
     cs, tabelas, fn_mapa = _fontes(camada)
     con = conectar_duckdb()
@@ -77,10 +105,20 @@ def gerar(camada: str, destino: Path) -> Path | None:
             nome_view = f"dim_{tabela}_{coluna}"
             if not criar_view(con, namespace, aba, estilo, nome_view, **spec):
                 continue
+
+            planilha, aba_origem, ftp = _procedencia(
+                con, _caminho(namespace, aba, spec.get("planilha")))
+
+            def lit(v: str) -> str:
+                return "'" + v.replace("'", "''") + "'"
+
             # A view já entrega uma linha por chave canônica, sem duplicata.
             partes.append(
                 f"SELECT '{tabela}' AS tabela, '{coluna}' AS coluna, "
-                f"codigo, descricao FROM {nome_view}"
+                f"codigo, descricao, "
+                f"{lit(planilha)} AS planilha, {lit(aba_origem)} AS aba, "
+                f"{lit(ftp)} AS caminho_ftp "
+                f"FROM {nome_view}"
             )
         print(f"   📖 {tabela}: {len(mapa)} dimensão(ões)")
 
