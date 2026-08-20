@@ -202,7 +202,11 @@ def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = Fal
         comando.append("--forcar")
     if mercado_completo:
         comando.append("--mercado-completo")
-    if hive:
+    # --hive só existe no construtor do CAGED, onde a saída particionada é
+    # opcional (o padrão lá espelha o caminho do bronze). O da RAIS grava
+    # particionado por ano sempre, então a flag não existe e passá-la faria o
+    # argparse abortar o job antes de processar uma linha.
+    if hive and camada == "caged":
         comando.append("--hive")
 
     # O tipo aparece no status ("● ... rodando"), então diz QUAL silver: os dois
