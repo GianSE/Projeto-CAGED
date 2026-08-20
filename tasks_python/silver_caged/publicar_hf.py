@@ -134,7 +134,8 @@ códigos (inclusive os que não aparecem no período), conferir uma tradução
 contra o de/para oficial, e trabalhar só com IDs se preferir.
 
 Formato longo — `tabela`, `coluna`, `codigo`, `descricao`, mais a procedência:
-`planilha`, `aba` e `caminho_ftp`. Toda linha diz de qual planilha oficial do
+`planilha`, `aba`, `caminho_ftp` e `extraido_em` (o MTE revisa as planilhas de
+layout; a data diz de qual versão este de/para saiu). Toda linha diz de qual planilha oficial do
 MTE ela saiu, então discordar de uma tradução é questão de baixar o arquivo
 apontado e abrir a aba indicada:
 

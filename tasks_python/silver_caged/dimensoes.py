@@ -55,6 +55,27 @@ def _fontes(camada: str):
     return cs, mp.TABELAS_RAIS, lambda con, fs, t, c: cs._mapa_traducao(fs, t, c)
 
 
+def _extraido_em(fs, caminho_parquet: str) -> str:
+    """
+    Quando este de/para foi extraído do FTP.
+
+    Vem da data de escrita do parquet do dicionário, que é exatamente o instante
+    da extração — evita uma terceira ida ao FTP só para carimbar a data.
+
+    Importa porque o MTE revisa as planilhas de layout: quem baixar a dimensão
+    hoje e daqui a um ano precisa saber se o de/para mudou ou se é o mesmo. E
+    precisa saber isso lendo o arquivo, não consultando o nosso MinIO — por isso
+    a data viaja como coluna, e não fica só no metadado do storage.
+    """
+    try:
+        alvos = fs.glob(caminho_parquet.replace("s3://", ""))
+        if not alvos:
+            return ""
+        return max(fs.info(a)["LastModified"] for a in alvos).date().isoformat()
+    except Exception:
+        return ""
+
+
 def _procedencia(con, caminho_parquet: str) -> tuple[str, str, str]:
     """
     De qual planilha, aba e caminho do FTP saiu este de/para.
@@ -106,8 +127,9 @@ def gerar(camada: str, destino: Path) -> Path | None:
             if not criar_view(con, namespace, aba, estilo, nome_view, **spec):
                 continue
 
-            planilha, aba_origem, ftp = _procedencia(
-                con, _caminho(namespace, aba, spec.get("planilha")))
+            fonte = _caminho(namespace, aba, spec.get("planilha"))
+            planilha, aba_origem, ftp = _procedencia(con, fonte)
+            extraido = _extraido_em(fs, fonte)
 
             def lit(v: str) -> str:
                 return "'" + v.replace("'", "''") + "'"
@@ -117,7 +139,7 @@ def gerar(camada: str, destino: Path) -> Path | None:
                 f"SELECT '{tabela}' AS tabela, '{coluna}' AS coluna, "
                 f"codigo, descricao, "
                 f"{lit(planilha)} AS planilha, {lit(aba_origem)} AS aba, "
-                f"{lit(ftp)} AS caminho_ftp "
+                f"{lit(ftp)} AS caminho_ftp, {lit(extraido)} AS extraido_em "
                 f"FROM {nome_view}"
             )
         print(f"   📖 {tabela}: {len(mapa)} dimensão(ões)")
