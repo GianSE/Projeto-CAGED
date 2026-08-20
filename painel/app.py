@@ -328,7 +328,9 @@ def _montar_status() -> dict:
     por_tabela = manifesto["por_tabela"]
     # Uma consulta por refresh, não uma por tabela: o módulo lê a árvore
     # inteira do repositório de uma vez e serve do cache.
-    hf = hf_status.ler()
+    # Um estado por camada: o painel mostra CAGED e RAIS, que são datasets
+    # separados no Hub.
+    hf_por_camada = hf_status.ler_todos()
 
     tabelas = []
     for nome in sorted(tabelas_bronze | tabelas_silver):
@@ -359,6 +361,7 @@ def _montar_status() -> dict:
         # Publicação: a meta é a silver completa, não o bronze. Publicar o que
         # ainda não foi traduzido não faria sentido, e usar o bronze como
         # denominador faria a barra parecer travada durante todo o upload.
+        hf = hf_por_camada[hf_status.camada_da_tabela(nome)]
         n_hf = hf.get("por_tabela", {}).get(nome, {}).get("arquivos", 0)
         pct_hf = min(100, round(n_hf / n_silver_full * 100)) if n_silver_full else None
 
@@ -392,7 +395,8 @@ def _montar_status() -> dict:
         "manifesto": manifesto,
         "processo": processos.status(),
         "disco": _disco(),
-        "hf": hf,
+        "hf": hf_por_camada["caged"],
+        "hf_camadas": hf_por_camada,
     }
 
 
@@ -486,9 +490,14 @@ def api_publicar_iniciar():
     """
     corpo = request.get_json(silent=True) or {}
     tabelas = corpo.get("tabelas") or []
-    repo = (corpo.get("repo") or hf_status.REPO_PADRAO).strip()
+    camada = corpo.get("camada", "caged")
+    if camada not in TABELAS_SILVER:
+        return jsonify({"ok": False, "erro": f"camada inválida: {camada}"}), 400
+    # Cada camada tem seu repositório; sem isso a RAIS iria parar no dataset do
+    # CAGED, que e o padrao herdado.
+    repo = (corpo.get("repo") or hf_status.REPOS[camada]).strip()
 
-    validas = TABELAS_SILVER["caged"]
+    validas = TABELAS_SILVER[camada]
     if not tabelas:
         tabelas = list(validas)
     invalidas = [t for t in tabelas if t not in validas]
@@ -501,7 +510,7 @@ def api_publicar_iniciar():
         return jsonify({"ok": False,
                         "erro": f"sem silver do mercado completo para: {', '.join(vazias)}"}), 409
 
-    resultado = processos.iniciar_publicacao(tabelas, repo)
+    resultado = processos.iniciar_publicacao(tabelas, repo, camada=camada)
     if resultado["ok"]:
         resultado["tabelas"] = tabelas
         resultado["repo"] = repo

@@ -217,7 +217,7 @@ def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = Fal
     return _lancar(comando, f"silver-{recorte}-{'-'.join(tabelas)}"[:60], tipo)
 
 
-def iniciar_publicacao(tabelas: list[str], repo: str) -> dict:
+def iniciar_publicacao(tabelas: list[str], repo: str, camada: str = "caged") -> dict:
     """
     Sobe o subprocesso de publicação no Hugging Face (silver -> Hub).
 
@@ -227,7 +227,7 @@ def iniciar_publicacao(tabelas: list[str], repo: str) -> dict:
     parcial dela, e o dataset ficaria com meses faltando sem nenhum aviso.
     """
     comando = [PYTHON_JOBS, "-m", "silver_caged.publicar_hf",
-               "--repo", repo, "--tabela", *tabelas]
+               "--camada", camada, "--repo", repo, "--tabela", *tabelas]
     return _lancar(comando, f"hf-{'-'.join(tabelas)}"[:60], f"publicação → {repo}")
 
 

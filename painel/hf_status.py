@@ -26,8 +26,26 @@ import time
 import urllib.error
 import urllib.request
 
-# Configurável porque o nome do dataset é decisão de publicação, não do painel.
-REPO_PADRAO = os.getenv("HF_REPO_COMPLETO", "Gianpedro/caged-microdados-traduzidos")
+# Um repositório por camada: CAGED e RAIS são datasets separados no Hub, e o
+# painel precisa acompanhar os dois. Configurável porque o nome do dataset é
+# decisão de publicação, não do painel.
+REPOS = {
+    "caged": os.getenv("HF_REPO_COMPLETO", "Gianpedro/caged-microdados-traduzidos"),
+    "rais": os.getenv("HF_REPO_RAIS", "Gianpedro/rais-microdados-traduzidos"),
+}
+
+# Mantido para quem já chamava assim (a rota de publicação do painel).
+REPO_PADRAO = REPOS["caged"]
+
+
+def camada_da_tabela(tabela: str) -> str:
+    """A qual dataset esta tabela pertence — o prefixo do nome já diz."""
+    return "rais" if tabela.startswith("rais") else "caged"
+
+
+def ler_todos() -> dict[str, dict]:
+    """Estado de publicação de cada camada, para o painel mostrar as duas."""
+    return {camada: ler(repo) for camada, repo in REPOS.items()}
 
 # A árvore recursiva de um repo com milhares de arquivos não é barata, e o
 # painel atualiza a cada 5 s. O TTL desacopla os dois: durante um upload longo
