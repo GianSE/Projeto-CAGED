@@ -133,7 +133,19 @@ arquivo para ler os dados. Ele serve para três coisas: a lista **completa** de
 códigos (inclusive os que não aparecem no período), conferir uma tradução
 contra o de/para oficial, e trabalhar só com IDs se preferir.
 
-Formato longo — `tabela`, `coluna`, `codigo`, `descricao`:
+Formato longo — `tabela`, `coluna`, `codigo`, `descricao`, mais a procedência:
+`planilha`, `aba` e `caminho_ftp`. Toda linha diz de qual planilha oficial do
+MTE ela saiu, então discordar de uma tradução é questão de baixar o arquivo
+apontado e abrir a aba indicada:
+
+```
+codigo  descricao  aba                caminho_ftp
+1       Homem      sexo               /pdet/microdados/NOVO CAGED/Layout Não-identificado Novo Caged Movimentação.xlsx
+1       MASCULINO  CAGESTID - layout  /pdet/microdados/CAGED/CAGEDEST_layout_Atualizado.xls
+```
+
+Servidor: `ftp.mtps.gov.br`.
+
 
 ```python
 duckdb.sql('''
