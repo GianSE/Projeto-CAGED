@@ -23,6 +23,7 @@ from extracao_ftp.config_extracao import (
     BUCKET_BRONZE,
     DIR_DOWNLOAD,
     FTP_BASE,
+    FTP_HOST,
     MINIO_ACCESS_KEY,
     MINIO_ENDPOINT,
     MINIO_REGION,
@@ -118,13 +119,19 @@ def _converter_planilha(caminho_local: Path, origem_slug: str, fs,
         df.columns = [f"col_{i:02d}" for i in range(len(df.columns))]
         df["aba_origem"] = str(nome_aba)
         df["planilha_origem"] = caminho_local.name
-        # Caminho REAL no FTP, gravado na hora em que o arquivo foi baixado.
+        # Endereco REAL no FTP, gravado na hora em que o arquivo foi baixado.
         #
         # Sem isto, a procedencia so poderia ser reconstruida a partir do slug
         # da pasta -- e para a RAIS, cuja varredura e recursiva, a subpasta
         # (vinculos/ ou estabelecimento/) se perde. Um caminho quase certo e
         # pior que nenhum: manda quem quer conferir procurar no lugar errado.
-        df["caminho_ftp"] = caminho_ftp
+        #
+        # URL COMPLETA, com o host, e nao so o caminho: o parquet de dimensoes
+        # e consumido sem o card do dataset, e procedencia que exige contexto
+        # externo para virar acionavel e procedencia pela metade. Se o MTE
+        # mudar de servidor o caminho muda junto de qualquer forma -- guardar
+        # so o sufixo nao protegeria de nada.
+        df["caminho_ftp"] = f"ftp://{FTP_HOST}{caminho_ftp}" if caminho_ftp else ""
 
         # O nome da PLANILHA entra no caminho, não só o da pasta e o da aba.
         #

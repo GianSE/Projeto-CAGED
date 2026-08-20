@@ -140,12 +140,21 @@ apontado e abrir a aba indicada:
 
 ```
 codigo  descricao  aba                caminho_ftp
-1       Homem      sexo               /pdet/microdados/NOVO CAGED/Layout Não-identificado Novo Caged Movimentação.xlsx
-1       MASCULINO  CAGESTID - layout  /pdet/microdados/CAGED/CAGEDEST_layout_Atualizado.xls
+1       Homem      sexo               ftp://ftp.mtps.gov.br/pdet/microdados/NOVO CAGED/Layout Não-identificado Novo Caged Movimentação.xlsx
+1       MASCULINO  CAGESTID - layout  ftp://ftp.mtps.gov.br/pdet/microdados/CAGED/CAGEDEST_layout_Atualizado.xls
 ```
 
-Servidor: `ftp.mtps.gov.br`.
+O mesmo código `1` é *Homem* numa planilha e *MASCULINO* na outra — arquivos e
+gerações diferentes. É por isso que a procedência acompanha cada linha.
 
+Navegadores modernos removeram o suporte a FTP; para baixar, use o Explorador
+de Arquivos do Windows, um cliente como o FileZilla (login anônimo), ou:
+
+```bash
+curl -O "ftp://ftp.mtps.gov.br/pdet/microdados/CAGED/CAGEDEST_layout_Atualizado.xls"
+```
+
+Para consultar as dimensões, filtre por tabela e coluna:
 
 ```python
 duckdb.sql('''
