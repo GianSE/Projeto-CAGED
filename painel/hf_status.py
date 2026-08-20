@@ -21,6 +21,7 @@ escrita.
 """
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -36,11 +37,29 @@ _TTL = 60
 _cache: dict[str, tuple[dict, float]] = {}
 
 
+# A árvore vem PAGINADA: no máximo 1000 entradas por resposta, com a próxima
+# página no header Link. Ler só a primeira página fazia o painel subcontar em
+# silêncio — o corte caiu no meio do caged_old e ele aparecia como 69 de 156,
+# com a publicação inteira já concluída. Quanto maior o dataset, pior a mentira.
+_RE_PROXIMA = re.compile(r'<([^>]+)>;\s*rel="next"')
+
+# Trava de segurança: 1000 entradas por página, então 60 páginas cobrem 60 mil
+# arquivos. Se um dia estourar, é melhor subcontar do que girar para sempre.
+_MAX_PAGINAS = 60
+
+
 def _consultar(repo: str) -> dict:
     url = f"https://huggingface.co/api/datasets/{repo}/tree/main?recursive=true"
-    requisicao = urllib.request.Request(url, headers={"User-Agent": "painel-caged"})
-    with urllib.request.urlopen(requisicao, timeout=20) as resposta:
-        itens = json.load(resposta)
+    itens: list[dict] = []
+
+    for _ in range(_MAX_PAGINAS):
+        requisicao = urllib.request.Request(url, headers={"User-Agent": "painel-caged"})
+        with urllib.request.urlopen(requisicao, timeout=20) as resposta:
+            itens += json.load(resposta)
+            proxima = _RE_PROXIMA.search(resposta.headers.get("Link") or "")
+        if not proxima:
+            break
+        url = proxima.group(1)
 
     por_tabela: dict[str, dict] = {}
     for item in itens:
