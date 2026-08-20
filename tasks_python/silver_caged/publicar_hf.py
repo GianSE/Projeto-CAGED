@@ -126,6 +126,34 @@ Filtrar por ano ou mês lê só as pastas correspondentes, sem tocar no resto.
 `mes_particao=__HIVE_DEFAULT_PARTITION__` aparece em `caged_ajustes`: os
 arquivos de 2002 a 2009 são anuais na fonte, sem competência mensal.
 
+## Dimensões (`dicionarios.parquet`)
+
+O fato já traz código **e** descrição lado a lado, então você não precisa deste
+arquivo para ler os dados. Ele serve para três coisas: a lista **completa** de
+códigos (inclusive os que não aparecem no período), conferir uma tradução
+contra o de/para oficial, e trabalhar só com IDs se preferir.
+
+Formato longo — `tabela`, `coluna`, `codigo`, `descricao`:
+
+```python
+duckdb.sql('''
+    SELECT codigo, descricao
+    FROM read_parquet('hf://datasets/{repo}/dicionarios.parquet')
+    WHERE tabela = 'caged_mov' AND coluna = 'cbo2002ocupacao'
+''').show()
+```
+
+**Por que a coluna `tabela` importa.** As duas gerações do CAGED usam sistemas
+de código **diferentes para o mesmo conceito**. Em raça/cor, o código `1` é
+*Branca* no Novo CAGED e *Indígena* no CAGED antigo; `2` é *Preta* contra
+*Branca*. Em sexo, `2` é *Feminino* no antigo e não existe no novo, enquanto
+`3` é *Mulher* no novo e não existe no antigo.
+
+Por isso não há um `dim_sexo` único: juntar sem filtrar por `tabela` produz
+números plausíveis e errados, e o erro não aparece como falha.
+
+Ao comparar os dois períodos, **compare pelas descrições**, nunca pelos códigos.
+
 ## Métrica principal
 
 `saldomovimentacao` (Novo CAGED) e `saldo_mov` (CAGED antigo) valem **+1 na
@@ -410,14 +438,24 @@ def main() -> int:
         # Corrigir uma frase do card não deveria custar uma varredura de 12 GB:
         # o upload_large_folder reexamina a pasta inteira antes de decidir o que
         # enviar. Um upload_file resolve em segundos.
-        api.upload_file(
-            path_or_fileobj=str(DIR_LOCAL / "README.md"),
-            path_in_repo="README.md",
-            repo_id=args.repo,
-            repo_type="dataset",
-            commit_message="Atualiza o card do dataset",
-        )
-        print(f"\n🏁 Card atualizado: https://huggingface.co/datasets/{args.repo}")
+        #
+        # As dimensões vão junto porque são metadado do mesmo tipo — algumas
+        # centenas de KB que mudam quando o card muda, e que ficariam órfãs se
+        # dependessem do envio pesado.
+        leves = ["README.md"]
+        if (DIR_LOCAL / "dicionarios.parquet").exists():
+            leves.append("dicionarios.parquet")
+
+        for nome in leves:
+            print(f"   ⬆️  {nome}")
+            api.upload_file(
+                path_or_fileobj=str(DIR_LOCAL / nome),
+                path_in_repo=nome,
+                repo_id=args.repo,
+                repo_type="dataset",
+                commit_message=f"Atualiza {nome}",
+            )
+        print(f"\n🏁 Metadados atualizados: https://huggingface.co/datasets/{args.repo}")
         return 0
 
     api.upload_large_folder(
