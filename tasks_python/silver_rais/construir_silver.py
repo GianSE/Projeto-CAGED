@@ -118,7 +118,8 @@ def preparar_dicionarios(con, fs, tabela: str, colunas: list[str]) -> dict[str, 
 
 def _select_silver(fs, con, tabela: str, colunas: list[str],
                    dicionarios: dict[str, str], caminho_bronze: str,
-                   so_tecnologia: bool = True) -> str:
+                   so_tecnologia: bool = True,
+                   faixa: tuple[int, int] | None = None) -> str:
     numericos = {k: v for k, v in mp.NUMERICOS.items() if k in colunas}
     datas_aaaamm = [c for c in mp.DATAS_AAAAMM if c in colunas]
 
@@ -167,10 +168,22 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
         else:
             print(f"      ⚠️  {tabela}: sem coluna de CNAE/CBO — gravando sem recorte")
 
+    # Leitura em FAIXA DE LINHAS quando o arquivo é grande demais para uma
+    # passada só. `file_row_number` é podado por row group pelo próprio DuckDB
+    # — medido: ler as linhas 5.000.000 a 5.500.000 de um arquivo de 5,6 mi
+    # levou 0,0 s, ou seja, ele não varreu o que estava fora da faixa.
+    if faixa:
+        fonte = (f"SELECT * EXCLUDE (file_row_number) "
+                 f"FROM read_parquet('{caminho_bronze}', file_row_number=true) AS b")
+        corte = f"file_row_number >= {faixa[0]} AND file_row_number < {faixa[1]}"
+        where = f"{where} AND {corte}" if where else f"WHERE {corte}"
+    else:
+        fonte = f"SELECT * FROM read_parquet('{caminho_bronze}') AS b"
+
     return f"""
         SELECT
             {select}
-        FROM (SELECT * FROM read_parquet('{caminho_bronze}') AS b {where}) AS b
+        FROM ({fonte} {where}) AS b
         {join_sql}
     """
 
@@ -192,6 +205,82 @@ def _stems_existentes(fs, bucket: str, tabela: str) -> set[str]:
         nome = caminho.split("/")[-1].removesuffix(".parquet")
         existentes.add(nome.rsplit("_", 1)[0])
     return existentes
+
+
+# Alvo de linhas por passada. Calibrado pelo que comprovadamente coube nesta
+# máquina: os arquivos do CAGED têm ~4,4 milhões de linhas e passaram sempre.
+# Os da RAIS chegam a 25,5 milhões (rais_vinc_sp), num pipeline com 33 joins —
+# seis vezes mais linhas e vinte vezes mais bytes que o maior arquivo do CAGED.
+LINHAS_POR_PEDACO = 3_000_000
+
+
+def _pedacos(con, origem_s3: str, stem: str) -> list[tuple[str, tuple[int, int] | None]]:
+    """
+    Divide um arquivo grande em faixas de linhas processáveis.
+
+    Devolve [(rotulo, faixa)]; faixa None significa "o arquivo inteiro de uma
+    vez", que é o caso da maioria.
+
+    A contagem sai do RODAPÉ do parquet (`parquet_file_metadata`), sem ler
+    dados. E o corte por `file_row_number` é podado por row group pelo DuckDB,
+    então cada pedaço lê só a parte dele — não é uma varredura completa por
+    pedaço.
+
+    O rótulo carrega o número da parte porque ele vira nome de arquivo, e é
+    ele que a retomada usa para saber o que já foi gravado: cair no meio de um
+    arquivo de 25 milhões de linhas passa a custar um pedaço, não o arquivo.
+
+    "parte" por extenso, e não "p": o sufixo vai para os nomes publicados no
+    Hugging Face, onde é lido por quem baixa o dataset. "p00" seria ambíguo
+    (página? partição? parte?) para quem não conhece o pipeline.
+    """
+    try:
+        grupos = con.execute(f"""
+            SELECT DISTINCT row_group_id, row_group_num_rows
+            FROM parquet_metadata('{origem_s3}')
+            ORDER BY row_group_id
+        """).fetchall()
+    except Exception:
+        return [(stem, None)]
+
+    total = sum(n for _, n in grupos)
+    if not total:
+        return [(stem, None)]
+    if total <= LINHAS_POR_PEDACO:
+        return [(stem, None)]
+
+    # Divisão UNIFORME: quantos pedaços cabem, e aí divide por igual. Fatias
+    # fixas deixariam um resto — 9.095.508 linhas viravam três de 3 milhões
+    # mais uma de 95 mil, e essa sobra vira um parquet minúsculo no dataset
+    # publicado. Com 4 pedaços de ~2,27 milhões não sobra nada.
+    quantidade = -(-total // LINHAS_POR_PEDACO)
+
+    # Cortes na BORDA DOS ROW GROUPS, não em qualquer linha. O row group é a
+    # unidade mínima que o parquet sabe pular: um corte no meio obriga o DuckDB
+    # a ler o grupo inteiro e descartar metade. Na borda, a poda é exata.
+    bordas = []
+    acumulado = 0
+    for _, linhas in grupos:
+        acumulado += linhas
+        bordas.append(acumulado)
+
+    # Para cada divisa ideal, a borda de row group MAIS PRÓXIMA — não a
+    # primeira que ultrapassa. Fechar o pedaço assim que passa do alvo faz o
+    # excesso se acumular a cada volta e empurrar toda a sobra para o último:
+    # medido no rais_vinc_sp, dava oito pedaços de 3,01 milhões e um de 1,38.
+    cortes = []
+    for k in range(1, quantidade):
+        ideal = total * k / quantidade
+        borda = min(bordas, key=lambda b: abs(b - ideal))
+        if borda not in cortes and 0 < borda < total:
+            cortes.append(borda)
+
+    partes, inicio = [], 0
+    for fim in cortes + [total]:
+        if fim > inicio:
+            partes.append((f"{stem}_parte{len(partes):02d}", (inicio, fim)))
+            inicio = fim
+    return partes
 
 
 def _copy_particionado(destino_s3: str, stem: str, query: str) -> str:
@@ -255,29 +344,35 @@ def construir(con, fs, tabela: str, so_tecnologia: bool = True,
 
     for n, origem in enumerate(arquivos, start=1):
         stem = origem.split("/")[-1].removesuffix(".parquet")
-        if stem in ja_gravados:
+        origem_s3 = f"s3://{origem}"
+
+        # A retomada é por PEDAÇO, não por arquivo: em rais_vinc_sp são 9
+        # pedaços, e cair no último não pode custar os oito anteriores.
+        partes = [(rotulo, faixa) for rotulo, faixa in _pedacos(con, origem_s3, stem)
+                  if rotulo not in ja_gravados]
+        if not partes:
             pulados += 1
             continue
 
-        origem_s3 = f"s3://{origem}"
         colunas = _colunas_arquivo(con, origem_s3)
         if not colunas:
             falhas += 1
             continue
 
-        query = _select_silver(fs, con, tabela, colunas, dicionarios, origem_s3,
-                               so_tecnologia=so_tecnologia)
-        try:
-            con.execute(_copy_particionado(destino_s3, stem, query))
-            linhas = con.execute(
-                f"SELECT count(*) FROM read_parquet('{destino_s3}/**/{stem}_*.parquet')"
-            ).fetchone()[0]
-            total_linhas += linhas
-            feitos += 1
-            print(f"   [{n}/{len(arquivos)}] ✅ {stem}: {linhas:,} linhas")
-        except Exception as e:
-            falhas += 1
-            print(f"   [{n}/{len(arquivos)}] ❌ {stem}: {str(e)[:200]}")
+        for rotulo, faixa in partes:
+            query = _select_silver(fs, con, tabela, colunas, dicionarios, origem_s3,
+                                   so_tecnologia=so_tecnologia, faixa=faixa)
+            try:
+                con.execute(_copy_particionado(destino_s3, rotulo, query))
+                linhas = con.execute(
+                    f"SELECT count(*) FROM read_parquet('{destino_s3}/**/{rotulo}_*.parquet')"
+                ).fetchone()[0]
+                total_linhas += linhas
+                feitos += 1
+                print(f"   [{n}/{len(arquivos)}] ✅ {rotulo}: {linhas:,} linhas")
+            except Exception as e:
+                falhas += 1
+                print(f"   [{n}/{len(arquivos)}] ❌ {rotulo}: {str(e)[:200]}")
 
     print(f"   📊 {feitos} gravado(s), {pulados} já existente(s), {falhas} falha(s) "
           f"| {total_linhas:,} linhas novas em {(time.time() - inicio) / 60:.1f} min")

@@ -378,12 +378,34 @@ def _fs_minio():
     )
 
 
-def espelhar(fs, tabelas: list[str], destino: Path) -> tuple[int, int]:
-    """Baixa silver/<tabela>/** para o disco, preservando a árvore de partições."""
+def espelhar(fs, tabelas: list[str], destino: Path,
+             anos: list[int] | None = None) -> tuple[int, int]:
+    """
+    Baixa silver/<tabela>/** para o disco, preservando a árvore de partições.
+
+    Com `anos`, espelha só essas partições. É o que torna possível publicar uma
+    base maior que o disco: traduz um ano, publica, apaga, e repete. A silver
+    completa do rais_vinc passa de 50 GB — não cabe inteira ao lado do bronze.
+    """
     baixados = pulados = 0
 
+    # O s3fs guarda listagens em cache, e este mesmo objeto `fs` foi usado pela
+    # construção da silver momentos antes. Sem invalidar, os arquivos recém
+    # gravados aparecem no glob mas o info() deles bate na listagem velha e
+    # levanta FileNotFoundError — aconteceu com os 34 pedaços de 2025.
+    fs.invalidate_cache()
+
     for tabela in tabelas:
-        arquivos = sorted(fs.glob(f"{BUCKET_SILVER}/{tabela}/**/*.parquet"))
+        # find(detail=True) traz caminho E tamanho numa listagem só. Antes era
+        # um info() por arquivo, o que além de lento era o que dependia do
+        # cache furado.
+        achados = fs.find(f"{BUCKET_SILVER}/{tabela}", detail=True)
+        tamanhos = {k: v.get("size", 0) for k, v in achados.items()
+                    if k.endswith(".parquet")}
+        arquivos = sorted(tamanhos)
+        if anos:
+            aceitos = tuple(f"ano_particao={a}/" for a in anos)
+            arquivos = [x for x in arquivos if any(p in x for p in aceitos)]
         if not arquivos:
             print(f"   ⏭️  {tabela}: nada na silver ainda")
             continue
@@ -396,7 +418,7 @@ def espelhar(fs, tabelas: list[str], destino: Path) -> tuple[int, int]:
         for n, remoto in enumerate(arquivos, start=1):
             relativo = remoto.split(f"{BUCKET_SILVER}/", 1)[1]
             local = destino / relativo
-            tamanho = fs.info(remoto)["size"]
+            tamanho = tamanhos[remoto]
 
             # Mesmo tamanho = já espelhado. Um parquet truncado por queda de
             # conexão tem tamanho diferente do original, então é repuxado.
