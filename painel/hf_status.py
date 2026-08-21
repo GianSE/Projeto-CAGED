@@ -38,6 +38,18 @@ REPOS = {
 REPO_PADRAO = REPOS["caged"]
 
 
+# "rais_vinc_sp_parte03_0.parquet" -> "rais_vinc_sp": tira o índice do
+# FILENAME_PATTERN do DuckDB e o sufixo de pedaço. Mora aqui porque o painel e
+# a contagem do Hub precisam derivar a origem da MESMA forma — se divergirem,
+# uma barra mostra 35 e a outra 7 para o mesmo trabalho.
+_RE_PEDACO = re.compile(r"_parte\d+$")
+
+
+def origem_do_arquivo(caminho: str) -> str:
+    nome = caminho.split("/")[-1].removesuffix(".parquet")
+    return _RE_PEDACO.sub("", nome.rsplit("_", 1)[0])
+
+
 def camada_da_tabela(tabela: str) -> str:
     """A qual dataset esta tabela pertence — o prefixo do nome já diz."""
     return "rais" if tabela.startswith("rais") else "caged"
@@ -79,14 +91,27 @@ def _consultar(repo: str) -> dict:
             break
         url = proxima.group(1)
 
+    # Conta ORIGENS, não arquivos: um arquivo do bronze vira vários pedaços na
+    # RAIS, e contar os pedaços faria a barra do Hub dizer 35 onde o bronze tem
+    # 7. `arquivos` continua sendo o nome do campo por compatibilidade com o
+    # front, mas o que ele guarda é a contagem de origens distintas.
     por_tabela: dict[str, dict] = {}
+    origens: dict[str, set] = {}
     for item in itens:
-        if item.get("type") != "file" or not item.get("path", "").endswith(".parquet"):
+        caminho = item.get("path", "")
+        if item.get("type") != "file" or not caminho.endswith(".parquet"):
             continue
-        tabela = item["path"].split("/")[0]
+        partes = caminho.split("/")
+        if len(partes) < 2:
+            continue  # dicionarios.parquet e afins ficam fora da contagem
+        tabela = partes[0]
         entrada = por_tabela.setdefault(tabela, {"arquivos": 0, "bytes": 0})
-        entrada["arquivos"] += 1
         entrada["bytes"] += item.get("size", 0) or 0
+        origens.setdefault(tabela, set()).add(origem_do_arquivo(caminho))
+
+    for tabela, conjunto in origens.items():
+        por_tabela[tabela]["arquivos"] = len(conjunto)
+        por_tabela[tabela]["origens"] = sorted(conjunto)
 
     return {
         "ok": True,

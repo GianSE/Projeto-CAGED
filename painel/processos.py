@@ -231,6 +231,23 @@ def iniciar_publicacao(tabelas: list[str], repo: str, camada: str = "caged") -> 
     return _lancar(comando, f"hf-{'-'.join(tabelas)}"[:60], f"publicação → {repo}")
 
 
+def iniciar_pipeline_rais(repo: str, ano_inicio: int = 0, ano_fim: int = 9999,
+                          tabela: str = "rais_vinc") -> dict:
+    """
+    Sobe o pipeline que traduz e publica a RAIS ano a ano.
+
+    É um job só, de propósito: traduzir, publicar e limpar precisam acontecer
+    em sequência para o mesmo ano, senão o disco enche. Fatiar em três jobs
+    separados devolveria a coordenação para quem clica.
+    """
+    comando = [PYTHON_JOBS, "-m", "silver_rais.pipeline_ano",
+               "--repo", repo, "--tabela", tabela,
+               "--ano-inicio", str(ano_inicio), "--ano-fim", str(ano_fim)]
+    faixa = f"{ano_inicio}-{ano_fim}" if ano_inicio else "todos"
+    return _lancar(comando, f"rais-pipeline-{tabela}-{faixa}"[:60],
+                   f"RAIS ano a ano → {repo}")
+
+
 def parar() -> dict:
     """Pede para o subprocesso terminar (SIGTERM); força depois de alguns segundos."""
     global _codigo_saida, _finalizado_em

@@ -154,12 +154,7 @@ def _listar_parquets(fs, bucket: str, tabela: str) -> list[str]:
         return []
 
 
-# "rais_vinc_sp_parte03_0.parquet" -> "rais_vinc_sp". Tira o índice do DuckDB
-# (o "_0" do FILENAME_PATTERN) e o sufixo de pedaço.
-RE_PEDACO = re.compile(r"_parte\d+$")
-
-
-def _contar_origens(fs, bucket: str, tabela: str) -> int:
+def _origens(fs, bucket: str, tabela: str) -> set[str]:
     """
     Quantos ARQUIVOS DE ORIGEM já viraram silver — não quantos foram gravados.
 
@@ -170,11 +165,8 @@ def _contar_origens(fs, bucket: str, tabela: str) -> int:
 
     Para o CAGED, que não é fatiado, o resultado é idêntico ao de antes.
     """
-    origens = set()
-    for caminho in _listar_parquets(fs, bucket, tabela):
-        nome = caminho.split("/")[-1].removesuffix(".parquet")
-        origens.add(RE_PEDACO.sub("", nome.rsplit("_", 1)[0]))
-    return len(origens)
+    return {hf_status.origem_do_arquivo(c)
+            for c in _listar_parquets(fs, bucket, tabela)}
 
 
 def _contar_parquets(fs, bucket: str, tabela: str) -> int:
@@ -363,8 +355,8 @@ def _montar_status() -> dict:
         # opcional e aparece numa coluna própria.
         # Por ORIGEM, não por arquivo gravado: com a RAIS fatiada em pedaços,
         # contar os gravados compararia 35 contra 7 e estouraria a barra.
-        n_silver = _contar_origens(fs, BUCKET_SILVER_TI, nome) if minio["ok"] else 0
-        n_silver_full = _contar_origens(fs, BUCKET_SILVER, nome) if minio["ok"] else 0
+        n_silver = len(_origens(fs, BUCKET_SILVER_TI, nome)) if minio["ok"] else 0
+        origens_silver = _origens(fs, BUCKET_SILVER, nome) if minio["ok"] else set()
         esperado = TOTAIS_BRONZE.get(nome)
         pct = min(100, round(n_bronze / esperado * 100)) if esperado else None
         # A silver grava um parquet por arquivo do bronze, então o próprio
@@ -379,20 +371,31 @@ def _montar_status() -> dict:
         pct_ti = (round(linhas_silver / linhas_bronze * 100, 2)
                   if linhas_bronze and linhas_silver is not None else None)
 
-        # Mercado completo: o mesmo raciocínio do recorte de TI — o bronze é a
-        # meta, porque a silver grava um arquivo por arquivo do bronze.
+        hf = hf_por_camada[hf_status.camada_da_tabela(nome)]
+        publicadas = set(hf.get("por_tabela", {}).get(nome, {}).get("origens", []))
+        n_hf = len(publicadas)
+
+        # A silver conta o que JÁ FOI TRADUZIDO, não o que ainda está no MinIO.
+        #
+        # O pipeline da RAIS apaga a silver de cada ano depois de publicá-lo —
+        # é isso que permite processar uma base maior que o disco. Contando só
+        # o que resta no bucket, a barra REGREDIA a cada limpeza: 2025 saiu de
+        # 7 para 0 com o trabalho inteiro feito e publicado.
+        #
+        # A união com o que está no Hub resolve: o ano some do MinIO mas
+        # continua contando. Para o CAGED, onde a silver não é apagada, a
+        # união não muda nada.
+        n_silver_full = len(origens_silver | publicadas)
         pct_silver_full = min(100, round(n_silver_full / n_bronze * 100)) if n_bronze else None
 
-        # Publicação: a meta é a silver completa, não o bronze. Publicar o que
-        # ainda não foi traduzido não faria sentido, e usar o bronze como
-        # denominador faria a barra parecer travada durante todo o upload.
-        hf = hf_por_camada[hf_status.camada_da_tabela(nome)]
-        n_hf = hf.get("por_tabela", {}).get(nome, {}).get("arquivos", 0)
-        pct_hf = min(100, round(n_hf / n_silver_full * 100)) if n_silver_full else None
+        # Publicação medida contra o BRONZE, não contra a silver: a silver é
+        # transitória na RAIS, e usá-la como meta daria 35/35 = 100% publicado
+        # com dois anos de dezenove no ar.
+        pct_hf = min(100, round(n_hf / n_bronze * 100)) if n_bronze else None
 
         tabelas.append({
             "hf": n_hf,
-            "hf_esperado": n_silver_full,
+            "hf_esperado": n_bronze,
             "pct_hf": pct_hf,
             "pct_silver_completo": pct_silver_full,
             "tabela": nome,
@@ -530,7 +533,7 @@ def api_publicar_iniciar():
         return jsonify({"ok": False, "erro": f"tabela inválida: {invalidas}"}), 400
 
     fs = _fs()
-    vazias = [t for t in tabelas if not _contar_parquets(fs, BUCKET_SILVER, t)]
+    vazias = [t for t in tabelas if not _origens(fs, BUCKET_SILVER, t)]
     if vazias:
         return jsonify({"ok": False,
                         "erro": f"sem silver do mercado completo para: {', '.join(vazias)}"}), 409
