@@ -154,6 +154,29 @@ def _listar_parquets(fs, bucket: str, tabela: str) -> list[str]:
         return []
 
 
+# "rais_vinc_sp_parte03_0.parquet" -> "rais_vinc_sp". Tira o índice do DuckDB
+# (o "_0" do FILENAME_PATTERN) e o sufixo de pedaço.
+RE_PEDACO = re.compile(r"_parte\d+$")
+
+
+def _contar_origens(fs, bucket: str, tabela: str) -> int:
+    """
+    Quantos ARQUIVOS DE ORIGEM já viraram silver — não quantos foram gravados.
+
+    Desde que a RAIS passou a ser processada em pedaços, um arquivo do bronze
+    produz vários da silver: os 7 arquivos de 2025 viram 35. Contar os gravados
+    fazia o painel comparar 35 contra 7 e a barra estourar os 100% — no
+    rais_vinc inteiro seriam ~900 pedaços contra 349 arquivos de origem.
+
+    Para o CAGED, que não é fatiado, o resultado é idêntico ao de antes.
+    """
+    origens = set()
+    for caminho in _listar_parquets(fs, bucket, tabela):
+        nome = caminho.split("/")[-1].removesuffix(".parquet")
+        origens.add(RE_PEDACO.sub("", nome.rsplit("_", 1)[0]))
+    return len(origens)
+
+
 def _contar_parquets(fs, bucket: str, tabela: str) -> int:
     return len(_listar_parquets(fs, bucket, tabela))
 
@@ -338,8 +361,10 @@ def _montar_status() -> dict:
         n_bronze = len(caminhos_bronze)
         # A silver principal do estudo é a de TI; o mercado completo é
         # opcional e aparece numa coluna própria.
-        n_silver = _contar_parquets(fs, BUCKET_SILVER_TI, nome) if minio["ok"] else 0
-        n_silver_full = _contar_parquets(fs, BUCKET_SILVER, nome) if minio["ok"] else 0
+        # Por ORIGEM, não por arquivo gravado: com a RAIS fatiada em pedaços,
+        # contar os gravados compararia 35 contra 7 e estouraria a barra.
+        n_silver = _contar_origens(fs, BUCKET_SILVER_TI, nome) if minio["ok"] else 0
+        n_silver_full = _contar_origens(fs, BUCKET_SILVER, nome) if minio["ok"] else 0
         esperado = TOTAIS_BRONZE.get(nome)
         pct = min(100, round(n_bronze / esperado * 100)) if esperado else None
         # A silver grava um parquet por arquivo do bronze, então o próprio
@@ -514,6 +539,29 @@ def api_publicar_iniciar():
     if resultado["ok"]:
         resultado["tabelas"] = tabelas
         resultado["repo"] = repo
+    return jsonify(resultado), (200 if resultado["ok"] else 409)
+
+
+@app.route("/api/rais/pipeline", methods=["POST"])
+def api_pipeline_rais():
+    """
+    Traduz e publica a RAIS ano a ano, liberando disco entre um ano e outro.
+
+    Rota própria porque não é nem só silver nem só publicação: é o ciclo
+    completo por ano, e é o único caminho viável para uma base cuja silver não
+    cabe inteira no disco ao lado do bronze.
+    """
+    corpo = request.get_json(silent=True) or {}
+    tabela = corpo.get("tabela", "rais_vinc")
+    if tabela not in TABELAS_SILVER["rais"]:
+        return jsonify({"ok": False, "erro": f"tabela inválida: {tabela}"}), 400
+
+    resultado = processos.iniciar_pipeline_rais(
+        repo=(corpo.get("repo") or hf_status.REPOS["rais"]).strip(),
+        ano_inicio=_int(corpo.get("ano_inicio", 0)),
+        ano_fim=_int(corpo.get("ano_fim", 9999)) or 9999,
+        tabela=tabela,
+    )
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 
 
