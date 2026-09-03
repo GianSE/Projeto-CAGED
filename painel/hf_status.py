@@ -57,9 +57,20 @@ _RE_INDICE = re.compile(r"_\d{1,2}$")
 
 
 def origem_do_arquivo(caminho: str) -> str:
-    """Nome do arquivo de ORIGEM, tanto no bronze quanto na silver."""
-    nome = caminho.split("/")[-1].removesuffix(".parquet")
-    return _RE_PEDACO.sub("", _RE_INDICE.sub("", nome))
+    """
+    Identidade do arquivo de ORIGEM, tanto no bronze quanto na silver.
+
+    Inclui as pastas de partição, e não só o nome: no bronze da RAIS o ano vive
+    apenas no caminho ("ano=2019/rais_vinc_sp.parquet"), então contar pelo nome
+    colapsava os 19 anos de cada UF numa origem só — 33 no lugar de 349.
+
+    Na silver o nome já carrega a competência, então o prefixo é redundante mas
+    inofensivo: o que importa é a contagem de distintos, e ela não muda.
+    """
+    partes = caminho.split("/")
+    nome = _RE_PEDACO.sub("", _RE_INDICE.sub("", partes[-1].removesuffix(".parquet")))
+    particoes = [p for p in partes[:-1] if "=" in p]
+    return "/".join(particoes + [nome])
 
 
 def camada_da_tabela(tabela: str, bronze: bool = False) -> str:
