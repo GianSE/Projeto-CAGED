@@ -56,6 +56,49 @@ def anos_no_bronze(fs, tabela: str) -> list[int]:
     return sorted(anos)
 
 
+def _origem(caminho: str) -> str:
+    """"rais_vinc_sp_parte03_0.parquet" -> "rais_vinc_sp"."""
+    nome = caminho.split("/")[-1].removesuffix(".parquet")
+    return re.sub(r"_parte\d+$", "", nome.rsplit("_", 1)[0])
+
+
+def anos_publicados(api, repo: str, tabela: str, fs) -> set[int]:
+    """
+    Anos que já estão COMPLETOS no Hub.
+
+    Sem isto, religar o pipeline reconstrói anos já publicados: quem decide o
+    que pular é a silver, e ela é justamente o que a limpeza apaga. Numa
+    interrupção depois de 2007 e 2008, religar refaria os dois do zero.
+
+    Um ano só é considerado pronto se TODOS os arquivos de origem daquele ano
+    no bronze estiverem publicados — publicação parcial (queda no meio do
+    upload) precisa ser retomada, não pulada.
+    """
+    try:
+        remotos = api.list_repo_files(repo_id=repo, repo_type="dataset")
+    except Exception as e:
+        print(f"   ⚠️  Não consegui listar o Hub ({str(e)[:80]}); nada será pulado")
+        return set()
+
+    publicadas: dict[int, set[str]] = {}
+    for caminho in remotos:
+        if not caminho.startswith(f"{tabela}/") or not caminho.endswith(".parquet"):
+            continue
+        m = re.search(r"ano_particao=(\d{4})", caminho)
+        if m:
+            publicadas.setdefault(int(m.group(1)), set()).add(_origem(caminho))
+
+    esperadas: dict[int, set[str]] = {}
+    for caminho in fs.glob(f"{BUCKET_BRONZE}/{tabela}/**/*.parquet"):
+        m = re.search(r"ano=(\d{4})", caminho)
+        if m:
+            esperadas.setdefault(int(m.group(1)), set()).add(
+                caminho.split("/")[-1].removesuffix(".parquet"))
+
+    return {ano for ano, origens in esperadas.items()
+            if origens and origens <= publicadas.get(ano, set())}
+
+
 def _tamanho_local(pasta: Path) -> float:
     return sum(a.stat().st_size for a in pasta.rglob("*.parquet")) / 1e9 if pasta.exists() else 0.0
 
@@ -136,6 +179,18 @@ def main() -> int:
         return 1
     api = HfApi(token=token)
     api.create_repo(repo_id=args.repo, repo_type="dataset", exist_ok=True)
+
+    # Pula o que o Hub já tem completo. Sem isso, religar depois de uma queda
+    # reconstrói anos prontos: quem decide o que pular na construção é a
+    # silver, e ela é justamente o que a limpeza apaga.
+    prontos = anos_publicados(api, args.repo, args.tabela, fs)
+    ja_feitos = [a for a in anos if a in prontos]
+    anos = [a for a in anos if a not in prontos]
+    if ja_feitos:
+        print(f"⏭️  já publicados, pulando: {', '.join(map(str, ja_feitos))}")
+    if not anos:
+        print("🏁 Todos os anos pedidos já estão publicados.")
+        return 0
 
     print(f"🔁 {args.tabela}: {len(anos)} ano(s) — {anos[0]} a {anos[-1]}")
     print(f"   destino: https://huggingface.co/datasets/{args.repo}\n")
