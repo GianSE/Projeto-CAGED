@@ -48,10 +48,18 @@ REPO_PADRAO = REPOS["caged"]
 # uma barra mostra 35 e a outra 7 para o mesmo trabalho.
 _RE_PEDACO = re.compile(r"_parte\d+$")
 
+# O índice do FILENAME_PATTERN do DuckDB é um inteiro pequeno ("_0", "_12"), e
+# só ele deve cair. Antes isto era um rsplit("_", 1) cego, que no bronze comia a
+# COMPETÊNCIA: "caged_mov_202001" virava "caged_mov", e as 78 origens do
+# caged_mov colapsavam em uma só. Limitar a 1-2 dígitos separa o índice da data
+# (6 dígitos) e do ano (4).
+_RE_INDICE = re.compile(r"_\d{1,2}$")
+
 
 def origem_do_arquivo(caminho: str) -> str:
+    """Nome do arquivo de ORIGEM, tanto no bronze quanto na silver."""
     nome = caminho.split("/")[-1].removesuffix(".parquet")
-    return _RE_PEDACO.sub("", nome.rsplit("_", 1)[0])
+    return _RE_PEDACO.sub("", _RE_INDICE.sub("", nome))
 
 
 def camada_da_tabela(tabela: str, bronze: bool = False) -> str:
