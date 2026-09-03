@@ -209,11 +209,20 @@ def _colunas_arquivo(con, caminho_s3: str) -> list[str]:
 
 
 def _stems_existentes(fs, bucket: str, tabela: str) -> set[str]:
-    """Arquivos-fonte já gravados, numa listagem só em vez de um exists() por arquivo."""
+    """
+    O que já foi gravado, identificado por ANO + arquivo de origem.
+
+    O ano é indispensável: no bronze da RAIS o nome não o carrega
+    ("ano=2019/rais_vinc_sp.parquet"), então `rais_vinc_sp` existe nos 19 anos.
+    Comparando só o nome, a retomada pulava cada UF em todos os anos seguintes
+    ao primeiro processado — 2007 saiu com 37 arquivos e 2009 com UM, sem erro
+    nenhum no log.
+    """
     existentes = set()
     for caminho in fs.glob(f"{bucket}/{tabela}/**/*.parquet"):
         nome = caminho.split("/")[-1].removesuffix(".parquet")
-        existentes.add(nome.rsplit("_", 1)[0])
+        m = re.search(r"ano_particao=(\d{4})", caminho)
+        existentes.add(f"{m.group(1) if m else '?'}/{nome.rsplit('_', 1)[0]}")
     return existentes
 
 
@@ -356,10 +365,12 @@ def construir(con, fs, tabela: str, so_tecnologia: bool = True,
         stem = origem.split("/")[-1].removesuffix(".parquet")
         origem_s3 = f"s3://{origem}"
 
-        # A retomada é por PEDAÇO, não por arquivo: em rais_vinc_sp são 9
-        # pedaços, e cair no último não pode custar os oito anteriores.
+        # A retomada é por ANO + PEDAÇO. O ano porque o nome não o carrega; o
+        # pedaço porque em rais_vinc_sp são 9, e cair no último não pode custar
+        # os oito anteriores.
+        ano_arq = _ano_do_caminho(origem) or "?"
         partes = [(rotulo, faixa) for rotulo, faixa in _pedacos(con, origem_s3, stem)
-                  if rotulo not in ja_gravados]
+                  if f"{ano_arq}/{rotulo}" not in ja_gravados]
         if not partes:
             pulados += 1
             continue
