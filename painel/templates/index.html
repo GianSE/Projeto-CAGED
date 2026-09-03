@@ -105,6 +105,8 @@
      amarelo do Hugging Face para o upload. */
   .barra-fill.barra-completo { background: linear-gradient(90deg, #b45309, #f59e0b); }
   .barra-fill.barra-hf { background: linear-gradient(90deg, #f59e0b, #fcd34d); }
+  /* Bronze num tom terroso, distinto do âmbar da publicação traduzida. */
+  .barra-fill.barra-bronze { background: linear-gradient(90deg, #92400e, #c2853f); }
 
   table.atividade { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.atividade th { text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; padding: 6px 10px; border-bottom: 1px solid var(--gridline); }
@@ -392,6 +394,20 @@ function atualizarTabelas(tabelas) {
   // As duas etapas do caminho até o dataset público. Só aparecem depois que a
   // tabela tem algo no mercado completo: para quem está só acompanhando a
   // extração, duas barras zeradas em todo card seriam ruído.
+  // Bronze publicado (dado cru em parquet). Barra separada da do traduzido:
+  // são datasets diferentes no Hub, com propostas diferentes.
+  function etapaBronze(t) {
+    const pct = t.pct_hf_bronze ?? 0;
+    if (!t.bronze) return '';
+    return `
+      <div class="etapa-rotulo" style="margin-top:12px;">Hugging Face · bronze ${pct === 100 ? '✓' : ''}</div>
+      <div class="barra-track"><div class="barra-fill barra-bronze" style="width:${pct}%"></div></div>
+      <div class="contagem">
+        <span>${t.hf_bronze ? fmt(t.hf_bronze) + ' / ' + fmt(t.bronze) + ' publicado(s)' : 'não publicado'}</span>
+        <span>${t.hf_bronze ? pct + '%' : ''}</span>
+      </div>`;
+  }
+
   function etapaPublicacao(t) {
     if (!t.silver_completo) return '';
     const pctC = t.pct_silver_completo ?? 0;
@@ -403,12 +419,13 @@ function atualizarTabelas(tabelas) {
         <span>${fmt(t.silver_completo)} / ${fmt(t.silver_esperado)} arquivo(s)</span>
         <span>${pctC}%</span>
       </div>
-      <div class="etapa-rotulo" style="margin-top:12px;">Hugging Face ${pctH === 100 ? '✓' : ''}</div>
+      <div class="etapa-rotulo" style="margin-top:12px;">Hugging Face · traduzido ${pctH === 100 ? '✓' : ''}</div>
       <div class="barra-track"><div class="barra-fill barra-hf" style="width:${pctH}%"></div></div>
       <div class="contagem">
         <span>${t.hf ? fmt(t.hf) + ' / ' + fmt(t.hf_esperado) + ' publicado(s)' : 'não publicado'}</span>
         <span>${t.hf ? pctH + '%' : ''}</span>
-      </div>`;
+      </div>
+      ${etapaBronze(t)}`;
   }
   for (const t of tabelas) {
     const pct = t.pct_bronze === null || t.pct_bronze === undefined ? null : t.pct_bronze;

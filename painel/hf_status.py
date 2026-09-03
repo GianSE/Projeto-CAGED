@@ -32,6 +32,10 @@ import urllib.request
 REPOS = {
     "caged": os.getenv("HF_REPO_COMPLETO", "Gianpedro/caged-microdados-traduzidos"),
     "rais": os.getenv("HF_REPO_RAIS", "Gianpedro/rais-microdados-traduzidos"),
+    # Bronze: o dado cru em parquet, publicado em repositório próprio. O painel
+    # acompanha os quatro para que nenhuma publicação fique sem barra.
+    "bronze_caged": os.getenv("HF_REPO_BRONZE_CAGED", "Gianpedro/bronze_caged"),
+    "bronze_rais": os.getenv("HF_REPO_BRONZE_RAIS", "Gianpedro/bronze_rais"),
 }
 
 # Mantido para quem já chamava assim (a rota de publicação do painel).
@@ -50,9 +54,10 @@ def origem_do_arquivo(caminho: str) -> str:
     return _RE_PEDACO.sub("", nome.rsplit("_", 1)[0])
 
 
-def camada_da_tabela(tabela: str) -> str:
+def camada_da_tabela(tabela: str, bronze: bool = False) -> str:
     """A qual dataset esta tabela pertence — o prefixo do nome já diz."""
-    return "rais" if tabela.startswith("rais") else "caged"
+    base = "rais" if tabela.startswith("rais") else "caged"
+    return f"bronze_{base}" if bronze else base
 
 
 def ler_todos() -> dict[str, dict]:

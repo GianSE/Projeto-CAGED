@@ -248,6 +248,21 @@ def iniciar_pipeline_rais(repo: str, ano_inicio: int = 0, ano_fim: int = 9999,
                    f"RAIS ano a ano → {repo}")
 
 
+def iniciar_publicacao_bronze(camada: str, repo: str,
+                              ano_inicio: int = 0, ano_fim: int = 9999) -> dict:
+    """
+    Publica a camada bronze no Hugging Face, ano a ano.
+
+    Job único porque espelhar, enviar e limpar precisam acontecer em sequência
+    para o mesmo ano — são 60 GB somando as duas bases, e o espelho divide
+    disco com o MinIO.
+    """
+    comando = [PYTHON_JOBS, "-m", "publicar_bronze",
+               "--camada", camada, "--repo", repo,
+               "--ano-inicio", str(ano_inicio), "--ano-fim", str(ano_fim)]
+    return _lancar(comando, f"bronze-{camada}"[:60], f"bronze {camada} → {repo}")
+
+
 def parar() -> dict:
     """Pede para o subprocesso terminar (SIGTERM); força depois de alguns segundos."""
     global _codigo_saida, _finalizado_em

@@ -174,28 +174,127 @@ def anos_de(fs, tabela: str) -> list[int]:
     return sorted(anos)
 
 
-def espelhar_ano(fs, tabelas: list[str], ano: int, destino: Path) -> tuple[int, float]:
-    """Baixa só as partições daquele ano. Devolve (arquivos, GB)."""
-    fs.invalidate_cache()
+# Um arquivo grande demais é ruim para quem consome: cada leitura remota
+# precisa baixar o bloco inteiro, e o paralelismo entre arquivos se perde. 300
+# MB mantém os parquets na faixa confortável para leitura por HTTP.
+MAX_BYTES_ARQUIVO = 300 * 1024 * 1024
+
+# Quanto acumular antes de disparar um envio. Enviar arquivo a arquivo pagaria
+# o custo fixo do upload_large_folder centenas de vezes; enviar tudo de uma vez
+# exigiria espelhar 52 GB no disco. Um lote de ~1 GB equilibra os dois.
+BYTES_POR_LOTE = 1024 ** 3
+
+
+def _partes_por_tamanho(con, origem_s3: str, tam_bytes: int) -> list[tuple[int, int] | None]:
+    """
+    Faixas de linhas para quebrar um arquivo grande em pedaços < MAX_BYTES.
+
+    O corte cai na borda dos row groups (a menor unidade que o parquet sabe
+    pular) e as partes saem equilibradas: para cada divisa ideal, escolhe a
+    borda mais próxima, em vez da primeira que ultrapassa — assim o excesso
+    não se acumula e sobra tudo na última parte.
+    """
+    if tam_bytes <= MAX_BYTES_ARQUIVO:
+        return [None]
+    try:
+        grupos = con.execute(f"""SELECT DISTINCT row_group_id, row_group_num_rows
+            FROM parquet_metadata('{origem_s3}') ORDER BY row_group_id""").fetchall()
+    except Exception:
+        return [None]
+
+    total = sum(n for _, n in grupos)
+    quantidade = -(-tam_bytes // MAX_BYTES_ARQUIVO)
+    if not total or quantidade < 2:
+        return [None]
+
+    bordas, acumulado = [], 0
+    for _, linhas in grupos:
+        acumulado += linhas
+        bordas.append(acumulado)
+
+    cortes = []
+    for k in range(1, quantidade):
+        ideal = total * k / quantidade
+        borda = min(bordas, key=lambda b: abs(b - ideal))
+        if borda not in cortes and 0 < borda < total:
+            cortes.append(borda)
+
+    faixas, inicio = [], 0
+    for fim in cortes + [total]:
+        if fim > inicio:
+            faixas.append((inicio, fim))
+            inicio = fim
+    return faixas
+
+
+def espelhar_lote(fs, con, alvos: list[tuple[str, int]], destino: Path) -> tuple[int, float]:
+    """
+    Traz um lote de arquivos para o disco, quebrando os grandes demais.
+
+    Arquivos dentro do limite são copiados como estão (byte a byte, sem
+    reescrever): não há motivo para passar o parquet por um COPY se ele já
+    está no tamanho certo. Só os grandes são reescritos em partes.
+    """
     baixados, bytes_ = 0, 0
-    for tabela in tabelas:
-        achados = fs.find(f"{BUCKET_BRONZE}/{tabela}", detail=True)
-        alvos = {k: v for k, v in achados.items()
-                 if k.endswith(".parquet") and f"ano={ano}/" in k}
-        if not alvos:
-            continue
-        print(f"   📥 PUBLICANDO: {tabela}  ({len(alvos)} arquivo(s) em {ano})")
-        for n, (remoto, info) in enumerate(sorted(alvos.items()), start=1):
-            local = destino / remoto.split(f"{BUCKET_BRONZE}/", 1)[1]
-            tam = info.get("size", 0)
+    for n, (remoto, tam) in enumerate(alvos, start=1):
+        rel = remoto.split(f"{BUCKET_BRONZE}/", 1)[1]
+        local = destino / rel
+        local.parent.mkdir(parents=True, exist_ok=True)
+        faixas = _partes_por_tamanho(con, f"s3://{remoto}", tam)
+
+        if faixas == [None]:
             if local.exists() and local.stat().st_size == tam:
                 continue
-            local.parent.mkdir(parents=True, exist_ok=True)
             fs.get(remoto, str(local))
-            baixados += 1
-            bytes_ += tam
             print(f"      [{n}/{len(alvos)}] ⬇️  {local.name}  ({tam / 1e6:.1f} MB)")
+        else:
+            base = local.with_suffix("")
+            if all(Path(f"{base}_parte{i:02d}.parquet").exists() for i in range(len(faixas))):
+                continue
+            for i, (ini, fim) in enumerate(faixas):
+                saida = Path(f"{base}_parte{i:02d}.parquet")
+                con.execute(f"""
+                    COPY (SELECT * EXCLUDE (file_row_number)
+                          FROM read_parquet('s3://{remoto}', file_row_number=true)
+                          WHERE file_row_number >= {ini} AND file_row_number < {fim})
+                    TO '{saida.as_posix()}' (FORMAT PARQUET, COMPRESSION 'ZSTD',
+                                             COMPRESSION_LEVEL 3);""")
+                print(f"      [{n}/{len(alvos)}] ✂️  {saida.name}  "
+                      f"({saida.stat().st_size / 1e6:.1f} MB)")
+        baixados += 1
+        bytes_ += tam
     return baixados, bytes_ / 1e9
+
+
+def lotes_de(fs, tabelas: list[str], anos: list[int]) -> list[list[tuple[str, int]]]:
+    """
+    Agrupa os arquivos do bronze em lotes de ~1 GB, na ordem de ano.
+
+    Publicar ano a ano tratava 2002 (2 MB) e 2019 (5 GB) do mesmo jeito: um
+    envio por ano, com o custo fixo do upload pago 25 vezes para o CAGED, cujo
+    total é 7,78 GB. Agrupando por tamanho, os anos pequenos viajam juntos.
+    """
+    fs.invalidate_cache()
+    arquivos = []
+    for tabela in tabelas:
+        for caminho, info in fs.find(f"{BUCKET_BRONZE}/{tabela}", detail=True).items():
+            if not caminho.endswith(".parquet"):
+                continue
+            m = re.search(r"ano=(\d{4})", caminho)
+            if m and int(m.group(1)) in anos:
+                arquivos.append((int(m.group(1)), caminho, info.get("size", 0)))
+
+    arquivos.sort()
+    lotes, atual, soma = [], [], 0
+    for _, caminho, tam in arquivos:
+        atual.append((caminho, tam))
+        soma += tam
+        if soma >= BYTES_POR_LOTE:
+            lotes.append(atual)
+            atual, soma = [], 0
+    if atual:
+        lotes.append(atual)
+    return lotes
 
 
 def escrever_card(destino: Path, camada: str, repo: str, tabelas: list[str]) -> None:
@@ -259,33 +358,42 @@ def main() -> int:
                         repo_id=args.repo, repo_type="dataset")
     print(f"   📚 dicionário e card publicados\n")
 
-    print(f"🔁 bronze {args.camada}: {len(anos)} ano(s) — {anos[0]} a {anos[-1]}")
-    inicio, falhas = time.time(), []
+    lotes = lotes_de(fs, tabelas, anos)
+    total_gb = sum(t for lote in lotes for _, t in lote) / 1e9
+    print(f"🔁 bronze {args.camada}: {len(anos)} ano(s), {total_gb:.2f} GB "
+          f"em {len(lotes)} lote(s) de ~{BYTES_POR_LOTE / 1e9:.0f} GB")
 
-    for n, ano in enumerate(anos, start=1):
-        print(f"\n   [{n}/{len(anos)}] ano {ano}")
+    from extracao_ftp.config_extracao import conectar_duckdb
+
+    con = conectar_duckdb()
+    con.execute("SET enable_progress_bar=false")
+
+    inicio, falhas = time.time(), []
+    for n, lote in enumerate(lotes, start=1):
+        gb_lote = sum(t for _, t in lote) / 1e9
+        print(f"\n   [{n}/{len(lotes)}] lote com {len(lote)} arquivo(s) · {gb_lote:.2f} GB")
         try:
-            arqs, gb = espelhar_ano(fs, tabelas, ano, destino)
+            arqs, gb = espelhar_lote(fs, con, lote, destino)
             if not arqs:
-                print(f"   ⏭️  {ano}: nada a enviar")
+                print("   ⏭️  já publicado, pulando")
                 continue
-            print(f"   ⬆️  Enviando {arqs} arquivo(s) · {gb:.2f} GB")
+            print(f"   ⬆️  Enviando {arqs} arquivo(s)")
             api.upload_large_folder(folder_path=str(destino), repo_id=args.repo,
                                     repo_type="dataset", print_report=True)
-            # Limpa só as pastas do ano — o dicionário e o card ficam.
+            # Limpa só os parquets do lote; o dicionário e o card ficam.
             for tabela in tabelas:
-                pasta = destino / tabela / f"ano={ano}"
+                pasta = destino / tabela
                 if pasta.exists():
                     shutil.rmtree(pasta)
-            print(f"   🧹 espelho local de {ano} removido ({gb:.2f} GB)")
+            print(f"   🧹 espelho local do lote removido ({gb:.2f} GB)")
         except Exception as e:
-            falhas.append(ano)
-            print(f"   ❌ {ano}: {str(e)[:200]}")
+            falhas.append(n)
+            print(f"   ❌ lote {n}: {str(e)[:200]}")
 
-    print(f"\n🏁 {len(anos) - len(falhas)}/{len(anos)} ano(s) em "
+    print(f"\n🏁 {len(lotes) - len(falhas)}/{len(lotes)} lote(s) em "
           f"{(time.time() - inicio) / 60:.0f} min")
     if falhas:
-        print(f"   ⚠️  anos com falha: {falhas}")
+        print(f"   ⚠️  lotes com falha: {falhas}")
     print(f"   https://huggingface.co/datasets/{args.repo}")
     return 0 if not falhas else 2
 

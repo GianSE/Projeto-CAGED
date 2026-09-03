@@ -375,6 +375,12 @@ def _montar_status() -> dict:
         publicadas = set(hf.get("por_tabela", {}).get(nome, {}).get("origens", []))
         n_hf = len(publicadas)
 
+        # Bronze publicado: mede contra o próprio bronze, que é a fonte.
+        hf_b = hf_por_camada[hf_status.camada_da_tabela(nome, bronze=True)]
+        n_hf_bronze = hf_b.get("por_tabela", {}).get(nome, {}).get("arquivos", 0)
+        pct_hf_bronze = (min(100, round(n_hf_bronze / n_bronze * 100))
+                         if n_bronze else None)
+
         # A silver conta o que JÁ FOI TRADUZIDO, não o que ainda está no MinIO.
         #
         # O pipeline da RAIS apaga a silver de cada ano depois de publicá-lo —
@@ -395,6 +401,8 @@ def _montar_status() -> dict:
 
         tabelas.append({
             "hf": n_hf,
+            "hf_bronze": n_hf_bronze,
+            "pct_hf_bronze": pct_hf_bronze,
             "hf_esperado": n_bronze,
             "pct_hf": pct_hf,
             "pct_silver_completo": pct_silver_full,
@@ -564,6 +572,23 @@ def api_pipeline_rais():
         ano_inicio=_int(corpo.get("ano_inicio", 0)),
         ano_fim=_int(corpo.get("ano_fim", 9999)) or 9999,
         tabela=tabela,
+    )
+    return jsonify(resultado), (200 if resultado["ok"] else 409)
+
+
+@app.route("/api/bronze/publicar", methods=["POST"])
+def api_publicar_bronze():
+    """Publica o bronze (dado cru em parquet) no Hugging Face, ano a ano."""
+    corpo = request.get_json(silent=True) or {}
+    camada = corpo.get("camada", "caged")
+    if camada not in TABELAS_SILVER:
+        return jsonify({"ok": False, "erro": f"camada inválida: {camada}"}), 400
+
+    resultado = processos.iniciar_publicacao_bronze(
+        camada=camada,
+        repo=(corpo.get("repo") or f"Gianpedro/bronze_{camada}").strip(),
+        ano_inicio=_int(corpo.get("ano_inicio", 0)),
+        ano_fim=_int(corpo.get("ano_fim", 9999)) or 9999,
     )
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 
