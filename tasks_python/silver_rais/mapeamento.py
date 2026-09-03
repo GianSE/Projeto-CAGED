@@ -183,3 +183,54 @@ NUMERICOS: dict[str, str] = {
 DATAS_AAAAMM: list[str] = []
 
 TABELAS_RAIS = ("rais_estab", "rais_vinc")
+
+
+# --- LAYOUT DE 2023 EM DIANTE -------------------------------------------------
+# A partir de 2023 o MTE renomeou TODA coluna codificada acrescentando
+# "_codigo", e no CBO ainda inverteu a ordem das palavras:
+#
+#     até 2022                    2023+
+#     cnae_20_subclasse           cnae_20_subclasse_codigo
+#     cbo_ocupacao_2002           cbo_2002_ocupacao_codigo
+#
+# Sem tratar isso, os 21 arquivos de 2023-2025 saíam SEM tradução (33 colunas
+# viraram 0) e SEM o recorte de tecnologia — o construtor não achava as colunas
+# de CNAE/CBO e gravava o mercado inteiro em silêncio, com o aviso perdido no
+# meio do log.
+#
+# Só entram aqui os nomes que mudaram além do sufixo; o resto é resolvido pela
+# tentativa automática de "<coluna>_codigo".
+# Conferidos um a um contra o schema real de 2023, não supostos: o layout novo
+# não só acrescentou "_codigo" como reescreveu vários nomes por extenso
+# ("tipo_estab" -> "tipo_estabelecimento", "sexo_trabalhador" -> "sexo").
+ALIASES = {
+    "cbo_ocupacao_2002": ("cbo_2002_ocupacao_codigo", "cbo_2002_ocupacao"),
+    "vinculo_ativo_3112": ("ind_vinculo_ativo_3112_codigo",),
+    "ind_simples": ("ind_estabelecimento_participante_simples_codigo",),
+    "sexo_trabalhador": ("sexo_codigo",),
+    "tipo_admissao": ("tipo_admissao_trabalhador_codigo",),
+    "tipo_estab": ("tipo_estabelecimento_codigo",),
+    "tipo_defic": ("tipo_deficiencia_codigo",),
+    "mun_trab": ("municipio_trab_codigo",),
+    "faixa_remun_media_sm": ("faixa_rem_media_sm_codigo",),
+    "regioes_adm_df": ("regiao_adm_df_codigo", "regioes_administrativas_df_codigo"),
+    # tipo_estab_1 fica de fora de propósito: no layout novo ela é
+    # "tipo_estabelecimento_nome", já em texto, e traduzir texto não faz
+    # sentido — foi o mesmo caso que a auditoria pegou no layout antigo.
+}
+
+
+def resolver(coluna: str, existentes) -> str | None:
+    """
+    Como esta coluna se chama NESTE arquivo — ou None se não existir.
+
+    Tenta, nesta ordem: o nome canônico, o nome com sufixo "_codigo", e os
+    apelidos declarados acima. Devolver None é resposta legítima: nem todo
+    layout tem todas as colunas.
+    """
+    candidatos = (coluna, f"{coluna}_codigo", *ALIASES.get(coluna, ()))
+    disponiveis = set(existentes)
+    for nome in candidatos:
+        if nome in disponiveis:
+            return nome
+    return None

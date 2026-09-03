@@ -77,8 +77,12 @@ def _mapa_traducao(fs, tabela: str, colunas: list[str]) -> dict[str, dict]:
     """
     mapa = {}
     for col, spec in mp.MAPA_MANUAL.get(tabela, {}).items():
-        if col not in colunas:
+        # O nome muda entre layouts (2023+ acrescentou "_codigo"); o mapa é
+        # escrito com o nome canônico e o resolvedor acha o real.
+        real = mp.resolver(col, colunas)
+        if real is None:
             continue
+        col = real
         if not existe(fs, mp.NAMESPACE_DICIONARIO, spec["aba"], spec.get("planilha")):
             print(f"      ⚠️  {col}: aba {spec['aba']} não existe em "
                   f"{spec.get('planilha')} — segue sem tradução")
@@ -158,7 +162,13 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
     # por ano para depois jogar quase todos fora seria desperdício puro.
     where = ""
     if so_tecnologia:
+        # Resolve pelo mesmo caminho da tradução: em 2023+ as colunas ganharam
+        # "_codigo" e o CBO inverteu a ordem das palavras. Sem isto o filtro era
+        # PULADO e o mercado inteiro entrava no bucket de TI — 402 milhões de
+        # linhas, com o aviso perdido no meio do log.
         col_cnae, col_cbo = esc.colunas_da_tabela(tabela, colunas)
+        col_cnae = mp.resolver(col_cnae, colunas) if col_cnae else             mp.resolver("cnae_20_subclasse", colunas)
+        col_cbo = mp.resolver(col_cbo, colunas) if col_cbo else             mp.resolver("cbo_ocupacao_2002", colunas)
         predicado = esc.sql_filtro_tecnologia(
             f'b."{col_cnae}"' if col_cnae else None,
             f'b."{col_cbo}"' if col_cbo else None,
