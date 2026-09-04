@@ -103,7 +103,16 @@ def preparar_dicionarios(con, fs, tabela: str, colunas: list[str]) -> dict[str, 
     Devolve {coluna_do_fato: nome_da_tabela_temporaria}, só para os dicionários
     que existem e vieram com linhas.
     """
-    mapa = _mapa_traducao(fs, tabela, colunas)
+    # Indexado pelo nome CANÔNICO, não pelo nome real de um arquivo.
+    #
+    # As views são preparadas uma vez por tabela, a partir da união dos schemas;
+    # o laço depois processa arquivo a arquivo, e os nomes mudam entre layouts.
+    # Chaveando pelo real, o dicionário saía com "sexo_trabalhador" e o arquivo
+    # de 2023 procurava "sexo_codigo" — 2023 a 2025 ficavam com ZERO traduções,
+    # mesmo com o resolvedor funcionando.
+    mapa = {col: {"namespace": mp.NAMESPACE_DICIONARIO, **spec}
+            for col, spec in mp.MAPA_MANUAL.get(tabela, {}).items()
+            if existe(fs, mp.NAMESPACE_DICIONARIO, spec["aba"], spec.get("planilha"))}
     if not mapa:
         print("   ⚠️  Nenhuma coluna traduzível — confira MAPA_MANUAL em mapeamento.py.")
         return {}
@@ -127,6 +136,13 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
     numericos = {k: v for k, v in mp.NUMERICOS.items() if k in colunas}
     datas_aaaamm = [c for c in mp.DATAS_AAAAMM if c in colunas]
 
+    # Do nome canônico do dicionário para o nome real NESTE arquivo.
+    reais = {}
+    for canonico, view in dicionarios.items():
+        real = mp.resolver(canonico, colunas)
+        if real:
+            reais[real] = view
+
     joins, expressoes = [], []
 
     for col in colunas:
@@ -139,8 +155,8 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
         else:
             expressoes.append(f'b."{col}" AS "{col}"')
 
-        if col in dicionarios:
-            nome_view = dicionarios[col]
+        if col in reais:
+            nome_view = reais[col]
             chave_fato = chave_normalizada(f'b."{col}"')
             joins.append(
                 f'LEFT JOIN {nome_view} AS "{nome_view}" '
