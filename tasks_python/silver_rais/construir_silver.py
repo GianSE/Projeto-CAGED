@@ -416,12 +416,24 @@ def _argumentos():
                    help="Reprocessa arquivos que já existem na silver (padrão: pula)")
     p.add_argument("--ano-inicio", type=int, default=0)
     p.add_argument("--ano-fim", type=int, default=9999)
+    p.add_argument("--threads", type=int, default=4,
+                   help="Threads do DuckDB. O padrão (todas as CPUs) estourava a "
+                        "memória nos arquivos grandes da RAIS: cada pipeline "
+                        "paralelo segura as tabelas hash dos 33 dicionários.")
     return p.parse_args()
 
 
 def main() -> int:
     args = _argumentos()
     con = conectar_duckdb()
+    # Menos threads = menos pipelines simultâneos = pico de memória menor.
+    #
+    # Com as 12 CPUs da máquina, os pedaços grandes do rais_vinc_sp morriam com
+    # "failed to allocate ... (3.7 GiB/3.7 GiB used)" — e o diretório de spill
+    # tinha 836 KB, ou seja, o DuckDB nem chegou a derramar: o operador que
+    # estourou não é derramável. Reduzir a concorrência é o que a própria
+    # mensagem de erro do DuckDB sugere primeiro.
+    con.execute(f"SET threads={max(1, args.threads)}")
     fs = _fs_minio()
 
     if args.listar:
