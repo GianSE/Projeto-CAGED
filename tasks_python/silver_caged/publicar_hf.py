@@ -48,6 +48,7 @@ os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 from extracao_ftp.config_extracao import (
     BUCKET_SILVER,
+    BUCKET_SILVER_TI,
     MINIO_ACCESS_KEY,
     MINIO_ENDPOINT,
     MINIO_REGION,
@@ -59,7 +60,8 @@ RAIZ_PUBLICACAO = Path(__file__).resolve().parents[2] / "publicacao"
 
 # Espelho local por camada. São datasets separados no Hub, e misturá-los numa
 # pasta só faria o upload_large_folder enviar o CAGED junto com a RAIS.
-DIRS = {"caged": RAIZ_PUBLICACAO / "completo", "rais": RAIZ_PUBLICACAO / "rais"}
+DIRS = {"caged": RAIZ_PUBLICACAO / "completo", "rais": RAIZ_PUBLICACAO / "rais",
+        "caged_ti": RAIZ_PUBLICACAO / "ti_caged", "rais_ti": RAIZ_PUBLICACAO / "ti_rais"}
 
 # Reatribuído em main() conforme --camada. Global porque o módulo inteiro já o
 # usava assim; trocar para parâmetro mexeria em cinco assinaturas sem ganho.
@@ -378,6 +380,11 @@ def _fs_minio():
     )
 
 
+# Bucket de origem do espelhamento. Reatribuído em main() conforme --recorte:
+# o recorte de TI vive em silver-ti e o mercado completo em silver.
+BUCKET_ORIGEM = BUCKET_SILVER
+
+
 def espelhar(fs, tabelas: list[str], destino: Path,
              anos: list[int] | None = None) -> tuple[int, int]:
     """
@@ -399,7 +406,7 @@ def espelhar(fs, tabelas: list[str], destino: Path,
         # find(detail=True) traz caminho E tamanho numa listagem só. Antes era
         # um info() por arquivo, o que além de lento era o que dependia do
         # cache furado.
-        achados = fs.find(f"{BUCKET_SILVER}/{tabela}", detail=True)
+        achados = fs.find(f"{BUCKET_ORIGEM}/{tabela}", detail=True)
         tamanhos = {k: v.get("size", 0) for k, v in achados.items()
                     if k.endswith(".parquet")}
         arquivos = sorted(tamanhos)
@@ -416,7 +423,7 @@ def espelhar(fs, tabelas: list[str], destino: Path,
         # então ele precisa falar essa língua.
         print(f"   📥 PUBLICANDO: {tabela}  ({len(arquivos)} arquivo(s))")
         for n, remoto in enumerate(arquivos, start=1):
-            relativo = remoto.split(f"{BUCKET_SILVER}/", 1)[1]
+            relativo = remoto.split(f"{BUCKET_ORIGEM}/", 1)[1]
             local = destino / relativo
             tamanho = tamanhos[remoto]
 
@@ -552,6 +559,9 @@ def _credencial() -> str | None:
 def main() -> int:
     p = argparse.ArgumentParser(description="Publica a silver completa do CAGED no Hugging Face.")
     p.add_argument("--repo", required=True, help="Destino no formato usuario/nome-do-dataset")
+    p.add_argument("--recorte", choices=("completo", "ti"), default="completo",
+                   help="Qual silver publicar: o mercado completo (bucket silver) "
+                        "ou o recorte de tecnologia (bucket silver-ti).")
     p.add_argument("--camada", choices=("caged", "rais"), default="caged",
                    help="Qual dataset publicar. Muda espelho local, tabelas e card.")
     p.add_argument("--repo-ti", default="Gianpedro/caged-tecnologia",
@@ -568,8 +578,10 @@ def main() -> int:
                    help="Regera e envia apenas o README do dataset, sem tocar nos parquets")
     args = p.parse_args()
 
-    global DIR_LOCAL
-    DIR_LOCAL = DIRS[args.camada]
+    global DIR_LOCAL, BUCKET_ORIGEM
+    chave = f"{args.camada}_ti" if args.recorte == "ti" else args.camada
+    DIR_LOCAL = DIRS[chave]
+    BUCKET_ORIGEM = BUCKET_SILVER_TI if args.recorte == "ti" else BUCKET_SILVER
 
     if args.camada == "caged":
         from silver_caged import mapeamento as mapa_camada
