@@ -208,15 +208,24 @@ def sql_filtro_cbo(coluna: str = "cbo2002ocupacao") -> str:
     return f"(substr({codigo}, 1, 4) IN ({familias}) OR {codigo} IN ({avulsos}))"
 
 
-def sql_classificacao() -> str:
+def sql_classificacao(col_cnae: str = "subclasse",
+                      col_cbo: str | None = "cbo2002ocupacao") -> str:
     """
-    Expressão que rotula cada movimentação nas duas lentes de uma vez.
+    Expressão que rotula cada registro nas duas lentes de uma vez.
 
     Guardar os dois rótulos na mesma tabela permite responder, sem novo
     processamento, a pergunta mais interessante: quantos profissionais de TI
     estão fora do setor de TI.
+
+    Os nomes de coluna são parâmetro porque a mesma classificação vale para o
+    CAGED e para a RAIS, que chamam CNAE e CBO de outro jeito. `col_cbo=None`
+    atende o estabelecimento da RAIS, que não tem ocupação — uma empresa não
+    exerce CBO — e nesse caso a lente de ocupação sai sempre falsa em vez de
+    quebrar a consulta.
     """
+    ocupacao = (f"CASE WHEN {sql_filtro_cbo(col_cbo)} THEN true ELSE false END"
+                if col_cbo else "false")
     return f"""
-        CASE WHEN {sql_filtro_cnae()} THEN true ELSE false END AS setor_ti,
-        CASE WHEN {sql_filtro_cbo()} THEN true ELSE false END AS ocupacao_ti
+        CASE WHEN {sql_filtro_cnae(col_cnae)} THEN true ELSE false END AS setor_ti,
+        {ocupacao} AS ocupacao_ti
     """

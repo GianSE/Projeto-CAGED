@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from dashboard import dados, narrativa, tema  # noqa: E402
+from dashboard import abas_rais, dados, dados_rais, narrativa, tema  # noqa: E402
 from dashboard.tema import fmt_compacto, fmt_num, fmt_reais  # noqa: E402
 
 st.set_page_config(page_title="Mercado de Trabalho em TI — CAGED",
@@ -68,9 +68,18 @@ tem_hist = dados.tem_serie_longa()
 anual = dados.serie_longa_anual() if tem_hist else None
 arco = narrativa.arco_historico(anual) if tem_hist and anual is not None else {}
 
+# A RAIS é opcional: sem a gold construída o dashboard segue funcionando só
+# com o CAGED, e as abas dela avisam o que falta rodar em vez de quebrar.
+tem_rais = dados_rais.tem_dados()
+anual_rais = dados_rais.estoque_anual() if tem_rais else None
+anos_rais = dados_rais.anos_disponiveis() if tem_rais else []
+arco_rais = (narrativa.arco_estoque(anual_rais)
+             if tem_rais and anual_rais is not None else {})
+
 st.title("💻 Vinte anos do mercado de trabalho em tecnologia")
-st.caption("Microdados do CAGED · recorte: setor de TI (CNAE) **ou** ocupação de TI (CBO) "
-           "· saldo = admissões − desligamentos")
+st.caption("Microdados do **CAGED** (fluxo: quantos empregos foram criados) e da "
+           "**RAIS** (estoque: quantos existem em 31/12) · recorte: setor de TI "
+           "(CNAE) **ou** ocupação de TI (CBO)")
 
 if arco:
     st.markdown(f'<p class="lead">{narrativa.texto_abertura(arco)}</p>',
@@ -83,11 +92,34 @@ if arco:
     k4.metric("Anos no vermelho", str(len(arco["anos_negativos"])),
               help="Anos com saldo negativo em toda a série")
 
-aba_hist, aba_onde, aba_quem, aba_setor, aba_dados = st.tabs([
+# A RAIS entra numa linha SEPARADA de indicadores, não misturada com a do
+# CAGED: são unidades diferentes — fluxo acumulado contra estoque num instante
+# — e empilhá-las na mesma linha convidaria a somar o que não se soma.
+if tem_rais and arco_rais:
+    st.markdown('<p class="lead">' + narrativa.texto_estoque(arco_rais) + '</p>',
+                unsafe_allow_html=True)
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric(f"Estoque em {arco_rais['ano_fim']}", fmt_compacto(arco_rais["estoque_fim"]),
+              f"{arco_rais['variacao_pct']:+.0f}% desde {arco_rais['ano_inicio']}",
+              help="Vínculos de tecnologia ativos em 31 de dezembro (RAIS)")
+    r2.metric("Remuneração mediana", f"{arco_rais['mediana_sm']:.2f} SM",
+              help="Em salários mínimos — comparável ao longo de toda a série, "
+                   "sem depender de deflator")
+    r3.metric("Remuneração média", f"{arco_rais['media_sm']:.2f} SM",
+              help="A distância para a mediana mostra o peso dos salários altos")
+    r4.metric("Tempo médio de emprego", f"{arco_rais['tempo_meses']:.0f} meses",
+              help="Permanência no vínculo — leitura de rotatividade que o CAGED "
+                   "não permite")
+
+(aba_hist, aba_onde, aba_quem, aba_setor,
+ aba_estoque, aba_remun, aba_empresas, aba_dados) = st.tabs([
     "📈 A trajetória",
     "🏢 Onde o trabalho acontece",
     "👥 Quem é contratado",
     "🗺️ Setores e regiões",
+    "📦 Estoque (RAIS)",
+    "💰 Remuneração (RAIS)",
+    "🏭 Empresas (RAIS)",
     "🔎 Sobre os dados",
 ])
 
@@ -337,7 +369,19 @@ with aba_setor:
                       "<br>Salário médio: R$ %{customdata[1]:,.2f}<extra></extra>")
             st.plotly_chart(f, width="stretch")
 
-# ==================================================== 5. SOBRE OS DADOS
+# ================================================ 5. ESTOQUE (RAIS)
+with aba_estoque:
+    abas_rais.estoque(anual_rais, arco_rais)
+
+# =========================================== 6. REMUNERAÇÃO (RAIS)
+with aba_remun:
+    abas_rais.remuneracao(anual_rais, arco_rais, anos_rais)
+
+# =============================================== 7. EMPRESAS (RAIS)
+with aba_empresas:
+    abas_rais.empresas(anos_rais)
+
+# ==================================================== 8. SOBRE OS DADOS
 with aba_dados:
     st.subheader("Como estes números foram construídos")
     st.markdown(f"""

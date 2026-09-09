@@ -129,3 +129,83 @@ def texto_lentes(fora_pct: float, total_prof: int) -> str:
         f"de TI, a maioria foi feita por bancos, varejo, indústria, saúde e governo. "
         f"Uma análise que olhasse só para o CNAE de tecnologia perderia esse contingente."
     )
+
+
+# ---------------------------------------------------------------------------
+# RAIS — leitura do ESTOQUE
+#
+# O CAGED responde "quanto o mercado se moveu"; a RAIS, "de que tamanho ele
+# é". As frases abaixo existem para impedir a confusão mais comum entre as
+# duas: saldo positivo não significa mercado grande, e estoque grande não
+# significa mercado aquecido.
+# ---------------------------------------------------------------------------
+def arco_estoque(anual: pd.DataFrame) -> dict:
+    """Números do estoque que as frases desta seção usam."""
+    if anual is None or anual.empty:
+        return {}
+    df = anual.sort_values("ano")
+    primeiro, ultimo = df.iloc[0], df.iloc[-1]
+    variacao = (ultimo["estoque"] / primeiro["estoque"] - 1) * 100 if primeiro["estoque"] else 0
+    return {
+        "ano_inicio": int(primeiro["ano"]),
+        "ano_fim": int(ultimo["ano"]),
+        "estoque_inicio": int(primeiro["estoque"]),
+        "estoque_fim": int(ultimo["estoque"]),
+        "variacao_pct": variacao,
+        "mediana_sm": float(ultimo["remuneracao_sm_mediana"] or 0),
+        "media_sm": float(ultimo["remuneracao_sm"] or 0),
+        "tempo_meses": float(ultimo["tempo_emprego_meses"] or 0),
+        "descartados": int(df["remun_descartada"].sum() or 0),
+    }
+
+
+def texto_estoque(a: dict) -> str:
+    if not a:
+        return ""
+    return (
+        f"Em {a['ano_fim']} havia <strong>{_fmt_abs(a['estoque_fim'])} vínculos "
+        f"de tecnologia ativos em 31 de dezembro</strong> — "
+        f"{a['variacao_pct']:+.0f}% em relação aos {_fmt_abs(a['estoque_inicio'])} "
+        f"de {a['ano_inicio']}. É o tamanho do mercado, não o quanto ele se moveu: "
+        f"o saldo do CAGED mede o movimento, a RAIS mede o nível."
+    )
+
+
+def texto_remuneracao(a: dict) -> str:
+    """
+    A distância entre média e mediana É a informação.
+
+    Se a média é bem maior que a mediana, poucos salários altos estão puxando
+    o número que costuma ser citado — e a maioria ganha bem menos do que a
+    média sugere.
+    """
+    if not a or not a["mediana_sm"]:
+        return ""
+    razao = a["media_sm"] / a["mediana_sm"] if a["mediana_sm"] else 0
+    return (
+        f"A mediana em {a['ano_fim']} é de <strong>{a['mediana_sm']:.2f} salários "
+        f"mínimos</strong>, contra uma média de {a['media_sm']:.2f} — "
+        f"{razao:.1f} vez{'es' if razao >= 2 else ''} maior. "
+        f"A distância entre as duas mostra que a média é puxada por poucos "
+        f"salários altos: metade dos profissionais ganha até a mediana. "
+        f"Medir em salários mínimos permite comparar {a['ano_inicio']} com "
+        f"{a['ano_fim']} sem escolher deflator."
+    )
+
+
+def texto_lentes_estoque(fora: int, dentro: int, sm_fora: float, sm_dentro: float) -> str:
+    if not fora or not dentro:
+        return ""
+    total = fora + dentro
+    comparacao = (
+        "e ganham mais que quem está dentro" if sm_fora > sm_dentro
+        else "e ganham menos que quem está dentro" if sm_fora < sm_dentro
+        else "com remuneração equivalente"
+    )
+    return (
+        f"<strong>{fora / total * 100:.0f}% dos profissionais de TI trabalham "
+        f"fora do setor de tecnologia</strong> ({_fmt_abs(fora)} contra "
+        f"{_fmt_abs(dentro)}) — {comparacao} "
+        f"({sm_fora:.2f} contra {sm_dentro:.2f} salários mínimos na mediana). "
+        f"Olhar só as empresas de TI perderia mais da metade do mercado."
+    )
