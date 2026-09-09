@@ -147,17 +147,31 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
         if real:
             reais[real] = view
 
+    # E o caminho inverso: real -> canônico, para HARMONIZAR o nome de saída.
+    #
+    # Sem isto a silver herda o nome da fonte, e o layout de 2023 deixa a série
+    # com dois esquemas: `bairros_sp` até 2022 e `bairros_sp_codigo` depois.
+    # Quem consultasse a série inteira teria que conhecer os dois — justamente
+    # o que a camada silver existe para evitar. A auditoria de consistência
+    # apontou 54 colunas nessa situação só no rais_estab.
+    canonicos = {}
+    for canonico in list(mp.MAPA_MANUAL.get(tabela, {})) + list(mp.NUMERICOS):
+        real = mp.resolver(canonico, colunas)
+        if real and real != canonico:
+            canonicos[real] = canonico
+
     joins, expressoes = [], []
 
     for col in colunas:
         if col in COLUNAS_TECNICAS:
             continue
 
+        saida = canonicos.get(col, col)
         if col in numericos:
             tipo = numericos[col]
-            expressoes.append(f'try_cast(replace(trim(b."{col}"), \',\', \'.\') AS {tipo}) AS "{col}"')
+            expressoes.append(f'try_cast(replace(trim(b."{col}"), \',\', \'.\') AS {tipo}) AS "{saida}"')
         else:
-            expressoes.append(f'b."{col}" AS "{col}"')
+            expressoes.append(f'b."{col}" AS "{saida}"')
 
         if col in reais:
             nome_view = reais[col]
@@ -166,7 +180,7 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
                 f'LEFT JOIN {nome_view} AS "{nome_view}" '
                 f'ON {chave_fato} = "{nome_view}".codigo_norm'
             )
-            expressoes.append(f'"{nome_view}".descricao AS "{col}_descricao"')
+            expressoes.append(f'"{nome_view}".descricao AS "{saida}_descricao"')
 
         if col in datas_aaaamm:
             expressoes.append(f'try_strptime(trim(b."{col}"), \'%Y%m\')::DATE AS "{col}_data"')
