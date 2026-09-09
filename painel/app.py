@@ -507,9 +507,13 @@ def api_silver_iniciar():
     # é a partição por ano/mês que o dataset publicado usa. Deixar os dois
     # separados na interface só criaria a combinação sem sentido "completo sem
     # partição", que ninguém quer e que quebraria o publicador.
+    # hive SEMPRE no CAGED, não só no mercado completo. A silver de TI tinha
+    # sido construída espelhando o caminho do bronze (`ano=`/`mes=`), o que
+    # deixou o lake com dois esquemas de partição — apontado pela auditoria de
+    # consistência. O construtor da RAIS já grava particionado sempre.
     resultado = processos.iniciar_silver(tabelas, camada=camada, forcar=forcar,
                                          mercado_completo=mercado_completo,
-                                         hive=mercado_completo)
+                                         hive=(camada == "caged"))
     if resultado["ok"]:
         resultado["tabelas"] = tabelas
     return jsonify(resultado), (200 if resultado["ok"] else 409)
