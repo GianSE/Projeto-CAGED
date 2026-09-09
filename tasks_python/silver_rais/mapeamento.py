@@ -82,7 +82,6 @@ _MAPA_VINC = {
     "tamanho_estabelecimento": _cagestid("TAMESTAB", _V),
     "tipo_admissao": _cagestid("TIPO ADM", _V),
     "tipo_estab": _cagestid("TIPO ESTBL", _V),
-    "tipo_estab_1": _cagestid("TIPO ESTBL", _V),
     "tipo_defic": _cagestid("TP DEFIC", _V),
     "tipo_vinculo": _cagestid("TP VINCULO", _V),
 
@@ -128,7 +127,6 @@ _MAPA_ESTAB = {
     "natureza_juridica": _cagestid("Natureza Jurídica", _E),
     "tamanho_estabelecimento": _cagestid("Tamanho Estabelecimento", _E),
     "tipo_estab": _cagestid("Tipo Estab", _E),
-    "tipo_estab_1": _cagestid("Tipo Estab", _E),
     "ind_rais_negativa": _cagestid("Ind Rais Negativa", _E),
     "ind_estab_participa_pat": _cagestid("Ind Estab Participa PAT", _E),
     "ind_simples": _cagestid("Ind Simples", _E),
@@ -206,7 +204,25 @@ TABELAS_RAIS = ("rais_estab", "rais_vinc")
 ALIASES = {
     "cbo_ocupacao_2002": ("cbo_2002_ocupacao_codigo", "cbo_2002_ocupacao"),
     "vinculo_ativo_3112": ("ind_vinculo_ativo_3112_codigo",),
-    "ind_simples": ("ind_estabelecimento_participante_simples_codigo",),
+    "ind_simples": ("ind_estabelecimento_participante_simples_codigo",
+                    "ind_estab_participante_simples_codigo"),
+
+    # Colunas que 2023 renomeou e que NÃO têm dicionário. Ficaram de fora
+    # da harmonização durante um tempo porque o construtor só consultava
+    # MAPA_MANUAL e NUMERICOS — quem não traduz não era renomeado, e a
+    # série ganhava `cnae_20_classe` até 2022 e `cnae_20_classe_codigo`
+    # depois. Passa despercebido: nenhuma delas é nula, cada ano lê bem
+    # sozinho, e só quebra na consulta que atravessa a série.
+    "cnae_20_classe": ("cnae_20_classe_codigo",),
+    "faixa_hora_contrat": ("faixa_hora_contrat_codigo",),
+    "faixa_remun_dezem_sm": ("faixa_rem_dez_sm_codigo",),
+    "faixa_tempo_emprego": ("faixa_tempo_emprego_codigo",),
+    "ibge_subsetor": ("ibge_subsetor_codigo",),
+    "ind_trab_intermitente": ("ind_trabalho_intermitente_codigo",),
+    "ind_trab_parcial": ("ind_trabalho_parcial_codigo",),
+    "ind_estab_participa_pat": ("ind_estab_participante_pat_codigo",),
+    "uf": ("uf_codigo",),
+    "tipo_estab_1": ("tipo_estabelecimento_nome",),
     "sexo_trabalhador": ("sexo_codigo",),
     "tipo_admissao": ("tipo_admissao_trabalhador_codigo",),
     "tipo_estab": ("tipo_estabelecimento_codigo",),

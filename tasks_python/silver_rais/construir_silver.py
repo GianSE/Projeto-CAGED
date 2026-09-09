@@ -155,7 +155,10 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
     # o que a camada silver existe para evitar. A auditoria de consistência
     # apontou 54 colunas nessa situação só no rais_estab.
     canonicos = {}
-    for canonico in list(mp.MAPA_MANUAL.get(tabela, {})) + list(mp.NUMERICOS):
+    # ALIASES entra na conta: coluna sem dicionário também precisa sair com o
+    # nome canônico, senão a série fica com dois nomes para a mesma informação.
+    for canonico in (list(mp.MAPA_MANUAL.get(tabela, {})) + list(mp.NUMERICOS)
+                     + list(mp.ALIASES)):
         real = mp.resolver(canonico, colunas)
         if real and real != canonico:
             canonicos[real] = canonico

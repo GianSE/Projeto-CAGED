@@ -599,6 +599,30 @@ def api_publicar_bronze():
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 
 
+@app.route("/api/manutencao/iniciar", methods=["POST"])
+def api_manutencao():
+    """
+    Roda um job de manutenção da silver (harmonizar, tipar, auditar, repor).
+
+    Rota única para os quatro porque são a mesma coisa do ponto de vista de
+    quem opera: consertos sobre a silver já construída, um por vez, com log.
+    """
+    corpo = request.get_json(silent=True) or {}
+    job = (corpo.get("job") or "").strip()
+    if job not in processos.JOBS_MANUTENCAO:
+        return jsonify({"ok": False, "erro": f"job inválido: {job}"}), 400
+
+    resultado = processos.iniciar_manutencao(
+        job=job,
+        tabela=corpo.get("tabela") or None,
+        ano_inicio=_int(corpo.get("ano_inicio", 0)),
+        ano_fim=_int(corpo.get("ano_fim", 9999)) or 9999,
+        so_listar=bool(corpo.get("so_listar")),
+        coluna=corpo.get("coluna") or None,
+    )
+    return jsonify(resultado), (200 if resultado["ok"] else 409)
+
+
 @app.route("/api/erros/retentar", methods=["POST"])
 def api_retentar_erros():
     """

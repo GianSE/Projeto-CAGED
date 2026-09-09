@@ -267,6 +267,59 @@ def iniciar_publicacao_bronze(camada: str, repo: str,
     return _lancar(comando, f"bronze-{camada}"[:60], f"bronze {camada} → {repo}")
 
 
+# Os jobs de manutenção da silver. Não constroem nada do bronze: consertam o
+# que já foi construído — nome de pasta, nome de coluna, tipo de coluna — e
+# conferem o resultado. Estavam só na linha de comando, o que os tornava
+# invisíveis: quem olha o painel não fazia ideia de que havia trabalho em
+# curso. Como qualquer um deles pode levar dezenas de minutos e reescrever
+# arquivo no MinIO, precisam da mesma trava e do mesmo log dos demais.
+JOBS_MANUTENCAO = {
+    "harmonizar": ("auditoria.harmonizar_nomes",
+                   "harmoniza nomes de coluna divergentes entre anos"),
+    "tipar": ("auditoria.tipar_numericos",
+              "converte para DOUBLE as numéricas que ficaram em texto"),
+    "auditar": ("auditoria.consistencia",
+                "confere completude, deriva de schema e tradução vazia"),
+    "repor": ("auditoria.repor_do_hub",
+              "repõe a silver a partir do que já está publicado"),
+    "reparticionar": ("auditoria.reparticionar",
+                      "uniformiza a profundidade das partições da tabela"),
+    "podar": ("auditoria.podar_colunas",
+              "remove colunas 100% nulas geradas por mapeamento errado"),
+}
+
+
+def iniciar_manutencao(job: str, tabela: list[str] | None = None,
+                       ano_inicio: int = 0, ano_fim: int = 9999,
+                       so_listar: bool = False,
+                       coluna: list[str] | None = None) -> dict:
+    """
+    Sobe um job de manutenção da silver.
+
+    Todos imprimem `[n/N]` por arquivo, então a barra de progresso do painel
+    funciona sem tratamento especial — é o mesmo formato que a construção usa.
+    """
+    if job not in JOBS_MANUTENCAO:
+        return {"ok": False, "erro": f"job de manutenção desconhecido: {job}"}
+
+    modulo, descricao = JOBS_MANUTENCAO[job]
+    comando = [PYTHON_JOBS, "-m", modulo]
+    if tabela:
+        comando += ["--tabela", *tabela]
+    # `consistencia` audita a camada inteira e não aceita recorte por ano;
+    # passar a faixa quebraria o job em vez de restringi-lo.
+    if job in ("harmonizar",) and (ano_inicio or ano_fim != 9999):
+        comando += ["--ano-inicio", str(ano_inicio), "--ano-fim", str(ano_fim)]
+    if so_listar and job in ("tipar", "reparticionar", "podar"):
+        comando.append("--so-listar")
+    if job == "podar":
+        if not coluna:
+            return {"ok": False, "erro": "poda exige --coluna"}
+        comando += ["--coluna", *coluna]
+
+    return _lancar(comando, f"manutencao-{job}"[:60], f"manutenção: {descricao}")
+
+
 def parar() -> dict:
     """Pede para o subprocesso terminar (SIGTERM); força depois de alguns segundos."""
     global _codigo_saida, _finalizado_em

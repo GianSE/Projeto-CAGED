@@ -60,7 +60,7 @@ def _origem(caminho: str) -> str:
     return "/".join([p for p in partes[:-1] if "=" in p] + [nome])
 
 
-def completude(fs, bucket: str, tabela: str) -> list[str]:
+def completude(con, fs, bucket: str, tabela: str) -> list[str]:
     """Toda partição do bronze tem correspondente na camada auditada?"""
     esperado, obtido = defaultdict(set), defaultdict(set)
     for c in fs.glob(f"{BUCKET_BRONZE}/{tabela}/**/*.parquet"):
@@ -73,9 +73,53 @@ def completude(fs, bucket: str, tabela: str) -> list[str]:
     problemas = []
     for ano in sorted(esperado):
         e, o = len(esperado[ano]), len(obtido.get(ano, set()))
-        if o != e:
-            problemas.append(f"{ano}: {o} de {e} origens")
+        if o == e:
+            continue
+        faltantes = sorted(esperado[ano] - obtido.get(ano, set()))
+        # Numa camada de TI, origem que não tem NENHUMA linha de tecnologia
+        # legitimamente não gera arquivo. `caged_ajustes` em 2002 é o caso: o
+        # bronze tem o arquivo, o recorte devolve zero linhas, e a silver não
+        # grava nada. Acusar isso como falta transformaria a única verificação
+        # de completude num alarme que se aprende a ignorar.
+        if bucket == BUCKET_SILVER_TI:
+            vazias = [n for n in faltantes if _sem_tecnologia(con, tabela, ano, n)]
+            faltantes = [n for n in faltantes if n not in vazias]
+            for n in vazias:
+                print(f"      ℹ️  {tabela} {ano}: origem {n} não tem nenhuma linha "
+                      f"de tecnologia — nada a gravar")
+        if faltantes:
+            problemas.append(f"{ano}: {len(faltantes)} origem(ns) sem saída "
+                             f"({', '.join(faltantes[:3])})")
     return problemas
+
+
+def _sem_tecnologia(con, tabela: str, ano: int, origem: str) -> bool:
+    """
+    A origem tem zero linha dentro do recorte de tecnologia?
+
+    Reaproveita o MESMO predicado que o construtor usa. Reescrevê-lo aqui
+    criaria duas definições de "o que é TI" que divergiriam na primeira
+    mudança — e a auditoria passaria a medir outra coisa.
+    """
+    from gold_caged import escopo_tecnologia as esc
+
+    try:
+        alvo = (f"'s3://{BUCKET_BRONZE}/{tabela}/ano={ano}/**/{origem}.parquet'")
+        colunas = [r[0] for r in con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet({alvo})").fetchall()]
+        col_cnae, col_cbo = esc.colunas_da_tabela(tabela, colunas)
+        predicado = esc.sql_filtro_tecnologia(
+            f'"{col_cnae}"' if col_cnae else None,
+            f'"{col_cbo}"' if col_cbo else None)
+        if not predicado:
+            return False
+        n = con.execute(
+            f"SELECT count(*) FROM read_parquet({alvo}) WHERE {predicado}").fetchone()[0]
+        return n == 0
+    except Exception:
+        # Na dúvida, reporta como falta: falso alarme é melhor que dado sumido
+        # sem aviso.
+        return False
 
 
 def _prefixo_particao(fs, bucket: str, tabela: str) -> str:
@@ -130,9 +174,22 @@ def deriva_de_schema(con, bucket: str, tabela: str, prefixo: str = "ano_particao
             amostra = ", ".join(f"{a}={tipos_por_ano[a][col]}" for a in presentes[:2])
             problemas.append(f"{col}: tipos divergentes ({amostra}, …)")
         elif 1 < len(presentes) < len(anos):
-            faltam = [a for a in anos if a not in presentes]
-            if faltam[0] not in (anos[0], anos[-1]):
-                problemas.append(f"{col}: ausente em {faltam[:3]} (buraco no meio)")
+            # Coluna que aparece num bloco CONTÍNUO de anos foi introduzida ou
+            # aposentada — é a vida normal de um layout que muda. O defeito é a
+            # coluna que some e VOLTA: aí faltou construir alguma coisa.
+            #
+            # A regra antiga perdoava só quando o primeiro ano faltante era uma
+            # ponta, e por isso acusava as colunas que o MTE aposentou em 2023
+            # (`ind_simples`, `cnae_20_classe`) de "buraco no meio" — três anos
+            # de cauda, não um. Sete falsos positivos por tabela transformam a
+            # auditoria em ruído, que é como um achado real passa despercebido.
+            posicoes = [anos.index(a) for a in presentes]
+            contiguo = posicoes == list(range(posicoes[0], posicoes[-1] + 1))
+            if not contiguo:
+                buracos = [anos[i] for i in range(posicoes[0], posicoes[-1])
+                           if i not in posicoes]
+                problemas.append(f"{col}: some e volta — ausente em {buracos[:3]} "
+                                 f"entre {presentes[0]} e {presentes[-1]}")
     return problemas
 
 
@@ -155,9 +212,35 @@ def traducao_vazia(con, bucket: str, tabela: str, prefixo: str = "ano_particao")
         sel = ", ".join(f'count("{d}")' for d in desc)
         r = con.execute(f"SELECT {sel} FROM {q}").fetchone()
         vazias = [d for d, n in zip(desc, r) if n == 0]
-        if vazias:
-            problemas.append(f"{ano}: {len(vazias)} descrição(ões) 100% nula(s) "
-                             f"({', '.join(vazias[:3])})")
+
+        # Descrição nula tem duas causas MUITO diferentes, e tratá-las igual
+        # torna a auditoria inútil:
+        #
+        #   - a origem só traz o marcador de "não informado" — CNAE 1.0 em 2007
+        #     é sempre '000-1', bairro em 2023+ é sempre '999997', aprendiz em
+        #     2003 é sempre '9'. Não há tradução possível nem o que consertar.
+        #   - a origem traz códigos de verdade e o join falhou — aí sim é
+        #     defeito nosso, e foi o que aconteceu com as 33 colunas de 2023.
+        #
+        # O que separa os dois é a VARIEDADE na coluna de código: um único
+        # valor distinto é marcador; vários são dado que deixou de ser traduzido.
+        reais, marcadores = [], []
+        for d in vazias:
+            origem = d.removesuffix("_descricao")
+            if origem not in cols:
+                reais.append(d)
+                continue
+            distintos = con.execute(
+                f'SELECT count(DISTINCT "{origem}") FROM {q}').fetchone()[0]
+            (marcadores if distintos <= 1 else reais).append(d)
+
+        if reais:
+            problemas.append(f"{ano}: {len(reais)} descrição(ões) 100% nula(s) "
+                             f"com código variado ({', '.join(reais[:3])})")
+        if marcadores:
+            print(f"      ℹ️  {tabela} {ano}: {len(marcadores)} coluna(s) sem tradução "
+                  f"porque a origem só tem marcador de não informado "
+                  f"({', '.join(marcadores[:3])})")
     return problemas
 
 
@@ -180,7 +263,7 @@ def main() -> int:
             continue
         prefixo = _prefixo_particao(fs, args.bucket, tabela)
         achados = []
-        for rotulo, fn in (("completude", lambda: completude(fs, args.bucket, tabela)),
+        for rotulo, fn in (("completude", lambda: completude(con, fs, args.bucket, tabela)),
                            ("schema", lambda: deriva_de_schema(con, args.bucket, tabela, prefixo)),
                            ("tradução", lambda: traducao_vazia(con, args.bucket, tabela, prefixo))):
             try:
