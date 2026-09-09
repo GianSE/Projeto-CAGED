@@ -746,19 +746,13 @@ async function rodarManutencao(ev) {
   if (!job) return;
   const rotulos = {
     auditar: 'Auditar a silver de TI (só lê, não altera nada)',
-    tipar: 'Converter para DOUBLE as colunas numéricas que ficaram em texto.
-
-' +
+    tipar: 'Converter para DOUBLE as colunas numéricas que ficaram em texto.\n\n' +
            'REESCREVE arquivos no MinIO. Cada arquivo é conferido antes e depois: ' +
            'se o cast perderia valor, o original é preservado.',
-    harmonizar: 'Repor a RAIS do Hub renomeando colunas para o vocabulário canônico.
-
-' +
+    harmonizar: 'Repor a RAIS do Hub renomeando colunas para o vocabulário canônico.\n\n' +
                 'Só grava onde ainda não existe arquivo local.',
     repor: 'Repor a silver a partir do que já está publicado no Hub.',
-    reparticionar: 'Regravar sob mes_particao= os arquivos que estão um nível acima do resto da tabela.
-
-' +
+    reparticionar: 'Regravar sob mes_particao= os arquivos que estão um nível acima do resto da tabela.\n\n' +
                    'Sem isso a tabela não pode ser lida inteira (Hive partition mismatch). ' +
                    'O original só é removido depois de conferir que a contagem de linhas bate.',
   };
