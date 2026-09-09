@@ -546,7 +546,9 @@ def api_publicar_iniciar():
         return jsonify({"ok": False,
                         "erro": f"sem silver do mercado completo para: {', '.join(vazias)}"}), 409
 
-    resultado = processos.iniciar_publicacao(tabelas, repo, camada=camada)
+    resultado = processos.iniciar_publicacao(
+        tabelas, repo, camada=camada,
+        recorte=corpo.get("recorte", "completo"))
     if resultado["ok"]:
         resultado["tabelas"] = tabelas
         resultado["repo"] = repo
