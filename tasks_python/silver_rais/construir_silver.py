@@ -133,7 +133,11 @@ def _select_silver(fs, con, tabela: str, colunas: list[str],
                    dicionarios: dict[str, str], caminho_bronze: str,
                    so_tecnologia: bool = True,
                    faixa: tuple[int, int] | None = None) -> str:
-    numericos = {k: v for k, v in mp.NUMERICOS.items() if k in colunas}
+    # Resolve os nomes também aqui: em 2023+ a remuneração virou "vl_rem_*".
+    # Sem isso a coluna saía VARCHAR nos anos novos e DOUBLE nos antigos, e a
+    # mesma coluna com dois tipos entre partições quebra a leitura da série.
+    numericos = {real: tipo for canon, tipo in mp.NUMERICOS.items()
+                 if (real := mp.resolver(canon, colunas))}
     datas_aaaamm = [c for c in mp.DATAS_AAAAMM if c in colunas]
 
     # Do nome canônico do dicionário para o nome real NESTE arquivo.

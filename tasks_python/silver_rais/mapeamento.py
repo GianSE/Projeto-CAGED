@@ -214,6 +214,14 @@ ALIASES = {
     "mun_trab": ("municipio_trab_codigo",),
     "faixa_remun_media_sm": ("faixa_rem_media_sm_codigo",),
     "regioes_adm_df": ("regiao_adm_df_codigo", "regioes_administrativas_df_codigo"),
+    # As colunas de remuneração encurtaram "remun" para "rem" em 2023. Sem
+    # estes apelidos elas ficavam VARCHAR nos anos novos e DOUBLE nos antigos —
+    # a mesma coluna com tipo diferente entre partições, que quebra qualquer
+    # soma ao longo da série.
+    "vl_remun_media_sm": ("vl_rem_media_sm",),
+    "vl_remun_media_nom": ("vl_rem_media_nom",),
+    "vl_remun_dezembro_sm": ("vl_rem_dezembro_sm",),
+    "vl_remun_dezembro_nom": ("vl_rem_dezembro_nom",),
     # tipo_estab_1 fica de fora de propósito: no layout novo ela é
     # "tipo_estabelecimento_nome", já em texto, e traduzir texto não faz
     # sentido — foi o mesmo caso que a auditoria pegou no layout antigo.
