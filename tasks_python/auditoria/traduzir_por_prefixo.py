@@ -27,9 +27,16 @@ import sys
 from pathlib import Path
 
 from extracao_ftp.config_extracao import BUCKET_SILVER_TI, conectar_duckdb
+from silver_caged import dimensoes
 
 RAIZ = Path(__file__).resolve().parents[2]
-DICIONARIO = RAIZ / "publicacao" / "rais" / "dicionarios.parquet"
+
+# O dicionário consolidado vive no LAKE, como todo o resto — ver
+# `silver_caged.dimensoes.caminho_canonico`. Ele já apontou para
+# `publicacao/rais/dicionarios.parquet`, e isso era um erro de direção: um
+# módulo de manutenção passava a depender da pasta de PUBLICAÇÃO, que é
+# espelho descartável. Limpar o espelho apagava a fonte deste módulo.
+DICIONARIO = dimensoes.caminho_canonico("rais")
 
 
 def _fs():
@@ -61,7 +68,7 @@ def main() -> int:
     # O prefixo precisa ser único ANTES de qualquer gravação: traduzir com
     # prefixo ambíguo trocaria uma coluna vazia por uma coluna errada, que é
     # muito pior — vazio se enxerga, errado não.
-    caminho_dic = args.dicionario.replace("\\", "/")
+    caminho_dic = args.dicionario.replace(chr(92), "/")
     ambiguos = con.execute(f"""
         SELECT count(*) FROM (
             SELECT substr(codigo, 1, {args.digitos})

@@ -35,12 +35,34 @@ import sys
 from pathlib import Path
 
 from extracao_ftp.config_extracao import (
+    BUCKET_SILVER,
     PARQUET_COMPRESSION,
     PARQUET_COMPRESSION_LEVEL,
     conectar_duckdb,
 )
 
 RAIZ_PUBLICACAO = Path(__file__).resolve().parents[2] / "publicacao"
+
+# ONDE O DICIONÁRIO CONSOLIDADO MORA
+# ----------------------------------
+# No lake, junto com todo o resto. Ele viveu um tempo apenas em
+# `publicacao/{camada}/dicionarios.parquet`, e isso estava errado por dois
+# motivos:
+#
+#   - `publicacao/` é ESPELHO. Serve para montar o que sobe ao Hugging Face e
+#     é descartável por definição — os publicadores rebaixam do MinIO antes de
+#     enviar. Ter ali a única cópia de um dado derivado significava que limpar
+#     o espelho apagava dado.
+#   - `auditoria/traduzir_por_prefixo` lê este arquivo em tempo de execução.
+#     Um módulo de manutenção dependendo de pasta de publicação inverte a
+#     direção do fluxo: quem produz passa a depender de quem distribui.
+#
+# O dicionário BRUTO (uma aba de planilha por arquivo) já estava no lake, em
+# `bronze/dicionarios/`. O consolidado é derivado dele, então é silver — mesma
+# camada, mesma regra que todas as outras tabelas.
+def caminho_canonico(camada: str) -> str:
+    """O lugar do dicionário consolidado no lake."""
+    return f"s3://{BUCKET_SILVER}/dicionarios/{camada}.parquet"
 
 
 def _fontes(camada: str):
@@ -104,8 +126,17 @@ def _procedencia(con, caminho_parquet: str) -> tuple[str, str, str]:
     return planilha, aba or "", caminho or ""
 
 
-def gerar(camada: str, destino: Path) -> Path | None:
+def gerar(camada: str, destino: "str | Path | None" = None) -> "str | Path | None":
+    """
+    Consolida as dimensões da camada num parquet único.
+
+    `destino` aceita caminho local (para montar o espelho de publicação) ou
+    URI `s3://` (o lake). Sem argumento, grava no lugar canônico — que é o
+    lake, para que o arquivo local seja sempre uma CÓPIA e nunca a única.
+    """
     from silver_caged.dicionarios import criar_view, _caminho
+
+    destino = destino if destino is not None else caminho_canonico(camada)
 
     cs, tabelas, fn_mapa = _fontes(camada)
     con = conectar_duckdb()
@@ -148,12 +179,17 @@ def gerar(camada: str, destino: Path) -> Path | None:
         print("   ⚠️  Nenhuma dimensão gerada.")
         return None
 
-    destino.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(destino, Path):
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        alvo = destino.as_posix()
+    else:
+        alvo = str(destino)
+
     con.execute(f"""
         COPY (
             SELECT * FROM ({' UNION ALL '.join(partes)})
             ORDER BY tabela, coluna, try_cast(codigo AS BIGINT) NULLS LAST, codigo
-        ) TO '{destino.as_posix()}' (
+        ) TO '{alvo}' (
             FORMAT PARQUET,
             COMPRESSION '{PARQUET_COMPRESSION.upper()}',
             COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL}
@@ -162,10 +198,12 @@ def gerar(camada: str, destino: Path) -> Path | None:
 
     linhas, colunas_distintas = con.execute(
         f"SELECT count(*), count(DISTINCT (tabela, coluna)) "
-        f"FROM read_parquet('{destino.as_posix()}')"
+        f"FROM read_parquet('{alvo}')"
     ).fetchone()
     print(f"\n   ✅ {linhas:,} códigos em {colunas_distintas} dimensão(ões)")
-    print(f"   📁 {destino.stat().st_size / 1024:.0f} KB -> {destino}")
+    tamanho = (f"{destino.stat().st_size / 1024:.0f} KB "
+               if isinstance(destino, Path) else "")
+    print(f"   📁 {tamanho}-> {alvo}")
     return destino
 
 
@@ -173,15 +211,23 @@ def main() -> int:
     p = argparse.ArgumentParser(description="Gera o parquet de dimensões do dataset.")
     p.add_argument("--camada", choices=("caged", "rais"), required=True)
     p.add_argument("--destino", type=Path, default=None,
-                   help="Padrão: publicacao/{completo|rais}/dicionarios.parquet")
+                   help="Caminho local, para montar o espelho de publicação. "
+                        "Sem isto grava no lake (s3://silver/dicionarios/).")
+    p.add_argument("--tambem-local", action="store_true",
+                   help="Grava no lake E no espelho de publicação.")
     args = p.parse_args()
 
-    destino = args.destino or (
-        RAIZ_PUBLICACAO / ("completo" if args.camada == "caged" else "rais")
-        / "dicionarios.parquet"
-    )
     print(f"📚 Dimensões da camada {args.camada}\n")
-    return 0 if gerar(args.camada, destino) else 1
+    if args.destino:
+        return 0 if gerar(args.camada, args.destino) else 1
+
+    if not gerar(args.camada):
+        return 1
+    if args.tambem_local:
+        copia = (RAIZ_PUBLICACAO / ("completo" if args.camada == "caged" else "rais")
+                 / "dicionarios.parquet")
+        gerar(args.camada, copia)
+    return 0
 
 
 if __name__ == "__main__":
