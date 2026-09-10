@@ -28,30 +28,21 @@ Além disso a RAIS traz remuneração em salários mínimos (comparável ao long
 19 anos sem escolher deflator), tempo de emprego e cadastro de estabelecimentos
 — nada disso existe no CAGED.
 """
-import os
-
 import pandas as pd
 import streamlit as st
 
 from dashboard.dados import _consultar, conectar  # noqa: F401  (mesma conexão e cache)
-from extracao_ftp.config_extracao import BUCKET_GOLD
 
-# Variável PRÓPRIA, e não a `DADOS_URL_BASE` que `dados.py` usa.
-#
-# As duas bases estão em repositórios diferentes no Hugging Face
-# (`caged-tecnologia` e `rais-tecnologia`), então uma URL não serve às duas.
-# Reaproveitar a do CAGED fazia o dashboard procurar `rais_estoque_anual.parquet`
-# dentro do dataset do CAGED e receber 404 — com o agravante de que o 404 era
-# engolido pelo `try` de `tem_dados()` e virava "a gold ainda não foi
-# construída", uma mensagem que mandava reconstruir o que já existia.
-#
-# Sem a variável, lê do MinIO local. É o caso hoje: a gold não é publicada.
-URL_BASE = os.getenv("DADOS_URL_BASE_RAIS", "").rstrip("/")
+# A raiz da gold vem de `fonte_gold`, que decide entre MinIO local e a cópia
+# publicada. Reaproveitar `DADOS_URL_BASE` seria errado de qualquer forma: ela
+# aponta para o dataset do CAGED, e os agregados da RAIS não estão lá — o
+# resultado era 404 disfarçado de "gold ainda não construída", mandando
+# reconstruir o que já existia.
+from dashboard.fonte_gold import caminho as _caminho  # noqa: E402
 
 
-def _caminho(nome: str) -> str:
-    return (f"{URL_BASE}/{nome}.parquet" if URL_BASE
-            else f"s3://{BUCKET_GOLD}/{nome}.parquet")
+def _caminho_gold(nome: str) -> str:
+    return _caminho(nome)
 
 
 # O recorte de TI é a união das duas lentes — setor OU ocupação —, igual ao
@@ -65,7 +56,7 @@ def tem_dados() -> bool:
     """A aba da RAIS só aparece se a gold existir — sem ela, nada a mostrar."""
     try:
         conectar().execute(
-            f"SELECT 1 FROM read_parquet('{_caminho('rais_estoque_anual')}') LIMIT 1"
+            f"SELECT 1 FROM read_parquet('{_caminho_gold('rais_estoque_anual')}') LIMIT 1"
         ).fetchone()
         return True
     except Exception:
@@ -102,7 +93,7 @@ def estoque_anual(lente: str = "ti") -> pd.DataFrame:
                {_media_ponderada('tempo_emprego_meses')}    AS tempo_emprego_meses,
                {_media_ponderada('idade_media')}            AS idade_media,
                {_media_ponderada('horas_semanais')}         AS horas_semanais
-        FROM read_parquet('{_caminho('rais_estoque_anual')}')
+        FROM read_parquet('{_caminho_gold('rais_estoque_anual')}')
         WHERE {onde}
         GROUP BY 1 ORDER BY 1
     """)
@@ -114,7 +105,7 @@ def estoque_por_uf() -> pd.DataFrame:
                sum(estoque_3112) AS estoque,
                {_media_ponderada('remuneracao_sm')}         AS remuneracao_sm,
                {_media_ponderada('remuneracao_sm_mediana')} AS remuneracao_sm_mediana
-        FROM read_parquet('{_caminho('rais_estoque_uf')}')
+        FROM read_parquet('{_caminho_gold('rais_estoque_uf')}')
         WHERE {TI} AND uf IS NOT NULL AND uf <> ''
         GROUP BY 1, 2 ORDER BY 1, 3 DESC
     """)
@@ -128,7 +119,7 @@ def estoque_por_area() -> pd.DataFrame:
                {_media_ponderada('remuneracao_sm')}         AS remuneracao_sm,
                {_media_ponderada('remuneracao_sm_mediana')} AS remuneracao_sm_mediana,
                {_media_ponderada('tempo_emprego_meses')}    AS tempo_emprego_meses
-        FROM read_parquet('{_caminho('rais_estoque_area')}')
+        FROM read_parquet('{_caminho_gold('rais_estoque_area')}')
         WHERE area_ti IS NOT NULL
         GROUP BY 1, 2 ORDER BY 1, 3 DESC
     """)
@@ -148,7 +139,7 @@ def perfil(dimensao: str) -> pd.DataFrame:
                {_media_ponderada('remuneracao_sm')}         AS remuneracao_sm,
                {_media_ponderada('remuneracao_sm_mediana')} AS remuneracao_sm_mediana,
                {_media_ponderada('tempo_emprego_meses')}    AS tempo_emprego_meses
-        FROM read_parquet('{_caminho('rais_estoque_perfil')}')
+        FROM read_parquet('{_caminho_gold('rais_estoque_perfil')}')
         WHERE {TI} AND "{coluna}" IS NOT NULL
         GROUP BY 1, 2 ORDER BY 1, 3 DESC
     """)
@@ -166,7 +157,7 @@ def hiato_por_escolaridade(ano: int) -> pd.DataFrame:
         SELECT escolaridade, sexo,
                sum(estoque_3112) AS estoque,
                {_media_ponderada('remuneracao_sm_mediana')} AS remuneracao_sm_mediana
-        FROM read_parquet('{_caminho('rais_estoque_perfil')}')
+        FROM read_parquet('{_caminho_gold('rais_estoque_perfil')}')
         WHERE {TI} AND ano = {int(ano)}
           AND escolaridade IS NOT NULL AND sexo IS NOT NULL
         GROUP BY 1, 2
@@ -182,7 +173,7 @@ def remuneracao_por_ocupacao(ano: int, limite: int = 20) -> pd.DataFrame:
                {_media_ponderada('remuneracao_sm_mediana')} AS remuneracao_sm_mediana,
                {_media_ponderada('remuneracao_nominal')}    AS remuneracao_nominal,
                {_media_ponderada('tempo_emprego_meses')}    AS tempo_emprego_meses
-        FROM read_parquet('{_caminho('rais_remuneracao_ocupacao')}')
+        FROM read_parquet('{_caminho_gold('rais_remuneracao_ocupacao')}')
         WHERE ano = {int(ano)}
         GROUP BY 1 ORDER BY 2 DESC LIMIT {int(limite)}
     """)
@@ -193,7 +184,7 @@ def municipios(ano: int, limite: int = 20) -> pd.DataFrame:
         SELECT municipio, uf,
                sum(estoque_3112) AS estoque,
                {_media_ponderada('remuneracao_sm_mediana')} AS remuneracao_sm_mediana
-        FROM read_parquet('{_caminho('rais_estoque_municipio')}')
+        FROM read_parquet('{_caminho_gold('rais_estoque_municipio')}')
         WHERE ano = {int(ano)} AND municipio IS NOT NULL
         GROUP BY 1, 2 ORDER BY 3 DESC LIMIT {int(limite)}
     """)
@@ -216,7 +207,7 @@ def lentes() -> pd.DataFrame:
                sum(estoque_3112) AS estoque,
                {_media_ponderada('remuneracao_sm_mediana')} AS remuneracao_sm_mediana,
                {_media_ponderada('tempo_emprego_meses')}    AS tempo_emprego_meses
-        FROM read_parquet('{_caminho('rais_setor_vs_ocupacao')}')
+        FROM read_parquet('{_caminho_gold('rais_setor_vs_ocupacao')}')
         GROUP BY 1, 2 ORDER BY 1, 3 DESC
     """)
 
@@ -229,7 +220,7 @@ def estabelecimentos_por_ano() -> pd.DataFrame:
                sum(vinculos_ativos)  AS vinculos_ativos,
                round(sum(vinculos_ativos) / nullif(sum(estabelecimentos), 0), 1)
                                      AS media_vinculos_por_estab
-        FROM read_parquet('{_caminho('rais_estabelecimentos')}')
+        FROM read_parquet('{_caminho_gold('rais_estabelecimentos')}')
         WHERE setor_ti
         GROUP BY 1 ORDER BY 1
     """)
@@ -240,7 +231,7 @@ def estabelecimentos_por_porte(ano: int) -> pd.DataFrame:
         SELECT porte,
                sum(estabelecimentos) AS estabelecimentos,
                sum(vinculos_ativos)  AS vinculos_ativos
-        FROM read_parquet('{_caminho('rais_estabelecimentos')}')
+        FROM read_parquet('{_caminho_gold('rais_estabelecimentos')}')
         WHERE setor_ti AND ano = {int(ano)} AND porte IS NOT NULL
         GROUP BY 1 ORDER BY 3 DESC
     """)
@@ -248,7 +239,7 @@ def estabelecimentos_por_porte(ano: int) -> pd.DataFrame:
 
 def anos_disponiveis() -> list[int]:
     df = _consultar(f"""
-        SELECT DISTINCT ano FROM read_parquet('{_caminho('rais_estoque_anual')}')
+        SELECT DISTINCT ano FROM read_parquet('{_caminho_gold('rais_estoque_anual')}')
         ORDER BY ano
     """)
     return [] if df.empty else [int(a) for a in df["ano"]]

@@ -9,4 +9,5 @@ streamlit
 plotly
 duckdb
 pandas
+numpy
 python-dotenv

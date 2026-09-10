@@ -18,22 +18,15 @@ o comando que falta rodar. A alternativa — deixar a exceção subir — derrub
 a página inteira porque um modelo não foi materializado; a outra alternativa,
 esconder o erro, deixaria um gráfico em branco sem explicação.
 """
-import os
-
 import pandas as pd
 import streamlit as st
 
 from dashboard.dados import _consultar, conectar  # noqa: F401
-from extracao_ftp.config_extracao import BUCKET_GOLD
 
-# Mesma variável própria de `dados_rais`: os agregados não estão no dataset do
-# CAGED, e reaproveitar DADOS_URL_BASE daria 404 disfarçado de tabela ausente.
-URL_BASE = os.getenv("DADOS_URL_BASE_RAIS", "").rstrip("/")
-
-
-def caminho(nome: str) -> str:
-    return (f"{URL_BASE}/{nome}.parquet" if URL_BASE
-            else f"s3://{BUCKET_GOLD}/{nome}.parquet")
+# A raiz da gold é resolvida por `fonte_gold`: variável de ambiente, senão
+# MinIO local, senão a cópia publicada no Hugging Face. Ver o módulo — o modo
+# de falha que ele evita é a página subir inteira e vazia.
+from dashboard.fonte_gold import caminho, rotulo  # noqa: E402,F401
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
