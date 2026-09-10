@@ -20,7 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from dashboard import abas_rais, dados, dados_rais, narrativa, tema  # noqa: E402
+from dashboard import (aba_mapa, abas_modelos, abas_rais, dados,  # noqa: E402
+                       dados_modelos, dados_rais, narrativa, tema)
 from dashboard.tema import fmt_compacto, fmt_num, fmt_reais  # noqa: E402
 
 st.set_page_config(page_title="Mercado de Trabalho em TI — CAGED",
@@ -112,7 +113,8 @@ if tem_rais and arco_rais:
                    "não permite")
 
 (aba_hist, aba_onde, aba_quem, aba_setor,
- aba_estoque, aba_remun, aba_empresas, aba_dados) = st.tabs([
+ aba_estoque, aba_remun, aba_empresas,
+ aba_mapa_ti, aba_prev, aba_hiato, aba_grupos, aba_dados) = st.tabs([
     "📈 A trajetória",
     "🏢 Onde o trabalho acontece",
     "👥 Quem é contratado",
@@ -120,6 +122,10 @@ if tem_rais and arco_rais:
     "📦 Estoque (RAIS)",
     "💰 Remuneração (RAIS)",
     "🏭 Empresas (RAIS)",
+    "🗺️ Mapa do Brasil",
+    "🔮 Previsão",
+    "⚖️ Hiato salarial",
+    "🧭 Perfis de município",
     "🔎 Sobre os dados",
 ])
 
@@ -381,7 +387,27 @@ with aba_remun:
 with aba_empresas:
     abas_rais.empresas(anos_rais)
 
-# ==================================================== 8. SOBRE OS DADOS
+# ================================================== 8. MAPA DO BRASIL
+with aba_mapa_ti:
+    aba_mapa.render()
+
+# ============================================ 9. PREVISÃO E NOWCAST
+with aba_prev:
+    abas_modelos.previsao()
+    st.divider()
+    abas_modelos.nowcast()
+    st.divider()
+    abas_modelos.sobrevivencia()
+
+# ==================================================== 10. HIATO SALARIAL
+with aba_hiato:
+    abas_modelos.hiato()
+
+# ============================================ 11. PERFIS DE MUNICÍPIO
+with aba_grupos:
+    abas_modelos.clusters()
+
+# =================================================== 12. SOBRE OS DADOS
 with aba_dados:
     st.subheader("Como estes números foram construídos")
     st.markdown(f"""

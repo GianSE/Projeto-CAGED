@@ -62,7 +62,7 @@ def estoque(anual, arco):
     st.plotly_chart(
         _linha(anual["ano"], anual["estoque"], "Vínculos ativos em 31/12",
                altura=380, sufixo=""),
-        use_container_width=True)
+        width='stretch')
 
     st.caption("Fonte: RAIS · vínculos com `vinculo_ativo_3112 = SIM`. "
                "Vínculos que existiram e terminaram durante o ano ficam de fora "
@@ -74,7 +74,7 @@ def estoque(anual, arco):
         st.plotly_chart(
             _linha(anual["ano"], anual["tempo_emprego_meses"],
                    "Tempo médio de emprego (meses)", cor=tema.SERIE_3, sufixo=" meses"),
-            use_container_width=True)
+            width='stretch')
         _leitura(
             "Tempo médio de vínculo é a leitura de rotatividade que o CAGED não "
             "permite: ele registra a movimentação, não a duração. Queda no tempo "
@@ -87,7 +87,7 @@ def estoque(anual, arco):
         st.plotly_chart(
             _linha(anual["ano"], taxa, "Desligados no ano / estoque (%)",
                    cor=tema.SERIE_2, sufixo="%"),
-            use_container_width=True)
+            width='stretch')
         _leitura(
             "Quantos vínculos terminaram durante o ano, em proporção ao estoque "
             "que sobreviveu até dezembro. É o giro do mercado."
@@ -103,7 +103,7 @@ def estoque(anual, arco):
             _barras(atual["estoque"], atual["categoria"], horizontal=True,
                     altura=260, margem_esq=8,
                     hover="%{y}<br>%{x:,.0f} vínculos<extra></extra>"),
-            use_container_width=True)
+            width='stretch')
 
         def _val(cat, col):
             linha = atual[atual["categoria"] == cat]
@@ -137,7 +137,7 @@ def remuneracao(anual, arco, anos):
         name="Mediana", line=dict(color=tema.SERIE_1, width=2.5),
         hovertemplate="%{x}<br>Mediana: %{y:.2f} SM<extra></extra>"))
     fig.update_layout(**tema.layout_base(altura=380, mostrar_legenda=True))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.caption(
         "Medir em múltiplos do salário mínimo torna a série comparável sem "
@@ -160,7 +160,7 @@ def remuneracao(anual, arco, anos):
                 _barras(atual["remuneracao_sm_mediana"], atual["area"],
                         horizontal=True, altura=320, cor=tema.SERIE_4,
                         hover="%{y}<br>%{x:.2f} SM (mediana)<extra></extra>"),
-                use_container_width=True)
+                width='stretch')
             st.caption(f"Mediana em salários mínimos, {ultimo}.")
 
     with col2:
@@ -180,7 +180,7 @@ def remuneracao(anual, arco, anos):
             lay = tema.layout_base(altura=320, mostrar_legenda=True)
             lay["margin"]["l"] = 8
             fig.update_layout(barmode="group", **lay)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             _leitura(
                 "Comparar dentro de cada nível de formação é o que separa "
                 "&ldquo;ganham menos porque estudaram menos&rdquo; de "
@@ -197,7 +197,7 @@ def remuneracao(anual, arco, anos):
             _barras(ordenado["remuneracao_sm_mediana"], ordenado["ocupacao"],
                     horizontal=True, altura=460, cor=tema.SERIE_1, margem_esq=8,
                     hover="%{y}<br>%{x:.2f} SM (mediana)<extra></extra>"),
-            use_container_width=True)
+            width='stretch')
         st.caption(f"Mediana em salários mínimos, {ano_ref}. Só ocupações com "
                    "pelo menos 200 vínculos no estoque.")
 
@@ -226,7 +226,7 @@ def empresas(anos):
     st.plotly_chart(
         _linha(porano["ano"], porano["estabelecimentos"],
                "Estabelecimentos", altura=340),
-        use_container_width=True)
+        width='stretch')
     _leitura(
         f"O setor saiu de {fmt_num(primeiro['estabelecimentos'])} estabelecimentos "
         f"em {int(primeiro['ano'])} para {fmt_num(atual['estabelecimentos'])} em "
@@ -244,7 +244,7 @@ def empresas(anos):
                 _barras(ordenado["vinculos_ativos"], ordenado["porte"],
                         horizontal=True, altura=380, cor=tema.SERIE_3,
                         hover="%{y}<br>%{x:,.0f} vínculos<extra></extra>"),
-                use_container_width=True)
+                width='stretch')
             st.caption(f"Vínculos ativos por faixa de tamanho do estabelecimento, {ultimo}.")
 
     with col2:
@@ -256,7 +256,7 @@ def empresas(anos):
                 _barras(ordenado["estoque"], ordenado["municipio"],
                         horizontal=True, altura=380, cor=tema.SERIE_5,
                         hover="%{y}<br>%{x:,.0f} vínculos<extra></extra>"),
-                use_container_width=True)
+                width='stretch')
             st.caption(f"Municípios com maior estoque de vínculos de TI, {ultimo}.")
 
     uf = dr.estoque_por_uf()
@@ -267,6 +267,6 @@ def empresas(anos):
             _barras(atual_uf["estoque"], atual_uf["uf"], horizontal=True,
                     altura=460, cor=tema.SERIE_2,
                     hover="%{y}<br>%{x:,.0f} vínculos<extra></extra>"),
-            use_container_width=True)
+            width='stretch')
         st.caption("A RAIS não traz coluna de UF: a sigla é extraída do prefixo "
                    "da descrição do município ('Df-Brasilia').")

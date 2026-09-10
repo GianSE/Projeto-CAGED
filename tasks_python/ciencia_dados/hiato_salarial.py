@@ -216,11 +216,98 @@ def _relatar(r: dict):
     print(f"\n   R² das equações: {r['r2_a']:.3f} e {r['r2_b']:.3f}")
 
 
+def serie(anos: range, con=None) -> pd.DataFrame:
+    """
+    A decomposição repetida ano a ano.
+
+    É o que responde a pergunta que um ano só não responde: a parte NÃO
+    EXPLICADA está encolhendo? Se ela cai ao longo de 19 anos, a diferença de
+    retorno está diminuindo mesmo que o hiato bruto não mude — e o contrário
+    também: hiato bruto estável pode esconder composição melhorando e retorno
+    piorando ao mesmo tempo.
+
+    Cada ano é ajustado do zero, com seus próprios coeficientes. Impor uma
+    estrutura comum a 2007 e 2025 suporia que o retorno da escolaridade não
+    mudou em duas décadas, que é justamente uma das coisas em teste.
+    """
+    con = con or conectar_duckdb()
+    linhas = []
+    for ano in anos:
+        try:
+            df = carregar(ano, con)
+        except Exception as e:
+            print(f"   ⚠️  {ano}: {str(e)[:70]}")
+            continue
+        for dimensao, a, b in (("sexo", "MASCULINO", "FEMININO"),
+                               ("raca", "BRANCA", "PARDA"),
+                               ("raca", "BRANCA", "PRETA")):
+            r = decompor(df, dimensao, a, b)
+            if not r:
+                continue
+            linhas.append({
+                "ano": ano, "dimensao": dimensao,
+                "comparacao": f"{a} vs {b}",
+                "n_a": r["n_a"], "n_b": r["n_b"],
+                "salario_a": r["salario_a"], "salario_b": r["salario_b"],
+                "hiato_log": r["hiato_log"], "hiato_pct": r["hiato_pct"],
+                "explicada": r["explicada"],
+                "nao_explicada": r["nao_explicada"],
+                # A participação só significa algo quando há hiato a repartir.
+                # Em 2011-2015 o hiato bruto de sexo passa perto de zero e a
+                # razão dispara para 4307% — número correto e inútil, que num
+                # gráfico viraria um pico sem sentido. Abaixo de 0,02 log
+                # (2% de diferença salarial) a divisão é suprimida.
+                "explicada_share": (r["explicada"] / r["hiato_log"] * 100
+                                    if abs(r["hiato_log"]) >= 0.02 else np.nan),
+            })
+        print(f"   ✅ {ano}: {len(df):,} vínculos")
+    return pd.DataFrame(linhas)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Decompõe o hiato salarial em TI.")
     p.add_argument("--ano", type=int, default=2024)
     p.add_argument("--dimensao", choices=("sexo", "raca", "ambos"), default="ambos")
+    p.add_argument("--serie", action="store_true",
+                   help="Roda a decomposição para toda a série e grava na gold.")
+    p.add_argument("--ano-inicio", type=int, default=2007)
+    p.add_argument("--ano-fim", type=int, default=2025)
     args = p.parse_args()
+
+    if args.serie:
+        from extracao_ftp.config_extracao import (
+            BUCKET_GOLD, PARQUET_COMPRESSION, PARQUET_COMPRESSION_LEVEL)
+
+        print("=" * 78)
+        print("  HIATO SALARIAL ANO A ANO — OAXACA-BLINDER")
+        print("=" * 78)
+        con = conectar_duckdb()
+        con.execute("SET enable_progress_bar=false")
+        con.execute("SET threads=4")
+        tabela = serie(range(args.ano_inicio, args.ano_fim + 1), con)
+        if tabela.empty:
+            print("\n❌ nada decomposto.")
+            return 1
+        con.register("hiato", tabela)
+        destino = f"s3://{BUCKET_GOLD}/hiato_serie.parquet"
+        con.execute(f"""
+            COPY (SELECT * FROM hiato) TO '{destino}' (
+                FORMAT PARQUET,
+                COMPRESSION '{PARQUET_COMPRESSION.upper()}',
+                COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL})
+        """)
+        print(f"\n📈 Evolução (parte não explicada, em log)")
+        for comp, sub in tabela.groupby("comparacao"):
+            sub = sub.sort_values("ano")
+            print(f"\n   {comp}")
+            print(f"      {'ano':<6}{'hiato':>9}{'explicada':>12}{'não expl.':>12}"
+                  f"{'% expl.':>10}")
+            for _, r in sub.iterrows():
+                print(f"      {int(r['ano']):<6}{r['hiato_log']:>9.4f}"
+                      f"{r['explicada']:>12.4f}{r['nao_explicada']:>12.4f}"
+                      f"{r['explicada_share']:>9.0f}%")
+        print(f"\n🏁 {len(tabela)} decomposições em {destino}")
+        return 0
 
     print("=" * 78)
     print(f"  HIATO SALARIAL EM TECNOLOGIA — OAXACA-BLINDER, RAIS {args.ano}")
