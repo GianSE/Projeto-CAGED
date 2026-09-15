@@ -1,19 +1,22 @@
 """
 O mapa: onde o emprego de TI está (RAIS) e para onde ele se move (CAGED).
 
-POR QUE DUAS CAMADAS E NÃO UMA
-------------------------------
-Um mapa de estoque pinta São Paulo de escuro e o resto de claro, todo ano,
-para sempre. É verdadeiro e é inútil: mede população.
+UM MAPA SÓ, COM DUAS CAMADAS
+----------------------------
+Antes eram dois mapas lado a lado, cada um com metade da largura — e a métrica
+escolhida mudava só o da esquerda. Ficava pequeno e, pior, enganoso: mexer no
+seletor não alterava as bolhas, então parecia que os municípios não respondiam
+a nada.
 
-Aqui há duas leituras sobrepostas, e a graça está em compará-las:
+Agora é um mapa em largura cheia com as duas camadas sobrepostas, e as duas
+seguem a métrica escolhida:
 
-    cor da UF    -> ESTOQUE (RAIS). O tamanho do mercado.
-    bolha        -> FLUXO (CAGED). Para onde ele está se movendo.
+    cor do estado  -> a métrica, em tom suave (fundo)
+    bolha          -> o município: tamanho pelo estoque, cor pela métrica
 
-Um estado escuro com bolha vermelha está grande e encolhendo. Um estado claro
-com bolha azul grande está pequeno e fervendo. Nenhuma das duas bases sozinha
-mostra isso, e é a comparação que responde "onde o mercado está indo".
+Sobrepor é o que permite comparar as duas leituras no mesmo lugar: um estado
+claro com bolhas escuras concentra o mercado em poucas cidades; um estado
+uniforme o distribui.
 
 O QUE O MAPA NÃO MOSTRA
 -----------------------
@@ -35,6 +38,15 @@ from dashboard.tema import fmt_compacto, fmt_num
 
 GEOJSON = Path(__file__).resolve().parent / "geo" / "br_uf.json"
 
+# Cada métrica com a escala que a torna legível. `divergente` marca a que tem
+# zero como referência: saldo negativo e positivo precisam de cores opostas,
+# e o meio da escala tem de cair exatamente no zero.
+METRICAS = {
+    "Estoque (RAIS)": ("estoque", "Vínculos ativos", "Blues", False),
+    "Saldo (CAGED)": ("saldo", "Saldo do ano", "RdBu", True),
+    "Remuneração (RAIS)": ("remuneracao_sm_mediana", "Mediana (SM)", "Purples", False),
+}
+
 
 @st.cache_resource
 def _geojson() -> dict | None:
@@ -49,68 +61,62 @@ def _leitura(texto: str):
         st.markdown(f'<div class="leitura">{texto}</div>', unsafe_allow_html=True)
 
 
-def _coropleto(df: pd.DataFrame, coluna: str, titulo: str, escala: str):
+def _mapa(uf: pd.DataFrame, muni: pd.DataFrame, coluna: str, titulo: str,
+          escala: str, divergente: bool, altura: int = 660):
+    """
+    Estados e municípios no mesmo mapa, ambos pela métrica escolhida.
+
+    O estado entra com opacidade baixa: ele é o pano de fundo, e as bolhas
+    precisam continuar legíveis por cima. Sem isso, num estado escuro a bolha
+    some.
+    """
     geo = _geojson()
     if geo is None:
         st.warning("Geometria dos estados não encontrada (`dashboard/geo/br_uf.json`).")
         return None
 
-    fig = go.Figure(go.Choropleth(
-        geojson=geo,
-        locations=df["uf"],
-        featureidkey="properties.sigla",
-        z=df[coluna],
-        colorscale=escala,
-        marker_line_color=tema.SUPERFICIE,
-        marker_line_width=0.6,
-        colorbar=dict(title=dict(text=titulo, side="right"), thickness=12,
-                      len=0.75, outlinewidth=0),
-        hovertemplate="<b>%{location}</b><br>" + titulo + ": %{z:,.0f}<extra></extra>",
-    ))
-    fig.update_geos(fitbounds="locations", visible=False,
-                    bgcolor="rgba(0,0,0,0)")
-    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=560,
-                      paper_bgcolor="rgba(0,0,0,0)",
-                      font=dict(color=tema.TEXTO))
-    return fig
+    fig = go.Figure()
 
+    dados_uf = uf.dropna(subset=[coluna])
+    if not dados_uf.empty:
+        fig.add_trace(go.Choropleth(
+            geojson=geo, locations=dados_uf["uf"], featureidkey="properties.sigla",
+            z=dados_uf[coluna], colorscale=escala,
+            zmid=0 if divergente else None,
+            marker_line_color=tema.GRID, marker_line_width=0.8, marker_opacity=0.40,
+            showscale=False, name="Estados",
+            hovertemplate="<b>%{location}</b><br>" + titulo + ": %{z:,.0f}<extra></extra>"))
 
-def _bolhas(df: pd.DataFrame, ano: int):
-    """
-    Municípios como bolhas: tamanho é estoque, cor é o sinal do saldo.
+    dados_muni = muni.dropna(subset=[coluna, "latitude", "longitude"]) if not muni.empty else muni
+    if not dados_muni.empty:
+        # Raiz do estoque no tamanho: a ÁREA fica proporcional ao valor, não o
+        # raio — senão São Paulo cobriria o Sudeste inteiro.
+        tamanho = dados_muni["estoque"] ** 0.5
+        maior = tamanho.max() or 1
+        fig.add_trace(go.Scattergeo(
+            lon=dados_muni["longitude"], lat=dados_muni["latitude"], mode="markers",
+            name="Municípios", text=dados_muni["municipio"],
+            customdata=dados_muni[["estoque", "saldo", "remuneracao_sm_mediana"]],
+            marker=dict(
+                size=tamanho / maior * 44 + 4,
+                color=dados_muni[coluna], colorscale=escala,
+                cmid=0 if divergente else None,
+                opacity=0.82, line=dict(width=0.6, color=tema.SUPERFICIE),
+                showscale=True,
+                colorbar=dict(title=dict(text=titulo, side="right"), thickness=13,
+                              len=0.7, outlinewidth=0, x=1.0)),
+            hovertemplate=("<b>%{text}</b><br>estoque: %{customdata[0]:,.0f}"
+                           "<br>saldo no ano: %{customdata[1]:+,.0f}"
+                           "<br>mediana: %{customdata[2]:.2f} SM<extra></extra>")))
 
-    Azul/vermelho em vez de verde/vermelho pelo mesmo motivo das barras do
-    resto do dashboard — daltônicos não distinguem verde de vermelho, e aqui o
-    sinal é a informação principal.
-    """
-    if df.empty:
-        return None
-    d = df.copy()
-    d["cor"] = [tema.POSITIVO if s >= 0 else tema.NEGATIVO for s in d["saldo"]]
-    # Raiz do estoque no tamanho: área proporcional ao valor, não o raio —
-    # senão São Paulo cobriria o Sudeste inteiro.
-    d["tamanho"] = (d["estoque"] ** 0.5)
-    maior = d["tamanho"].max() or 1
-
-    fig = go.Figure(go.Scattergeo(
-        lon=d["longitude"], lat=d["latitude"],
-        text=d["municipio"],
-        customdata=d[["estoque", "saldo", "remuneracao_sm_mediana"]],
-        marker=dict(
-            size=d["tamanho"] / maior * 42 + 3,
-            color=d["cor"], opacity=0.65,
-            line=dict(width=0.4, color=tema.SUPERFICIE),
-        ),
-        hovertemplate=("<b>%{text}</b><br>estoque: %{customdata[0]:,.0f}"
-                       "<br>saldo no ano: %{customdata[1]:+,.0f}"
-                       "<br>mediana: %{customdata[2]:.2f} SM<extra></extra>"),
-    ))
-    fig.update_geos(scope="south america", fitbounds="locations", visible=True,
+    fig.update_geos(projection_type="mercator", lataxis_range=[-34, 6.5],
+                    lonaxis_range=[-74.5, -33.5], fitbounds=False, visible=True,
                     showcountries=True, countrycolor=tema.GRID,
                     showland=True, landcolor=tema.SUPERFICIE,
-                    lakecolor="rgba(0,0,0,0)", bgcolor="rgba(0,0,0,0)")
-    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=560,
-                      paper_bgcolor="rgba(0,0,0,0)", font=dict(color=tema.TEXTO))
+                    showocean=False, showlakes=False, bgcolor="rgba(0,0,0,0)")
+    fig.update_layout(margin=dict(l=0, r=0, t=4, b=0), height=altura,
+                      paper_bgcolor="rgba(0,0,0,0)", showlegend=False,
+                      font=dict(color=tema.TEXTO, size=13))
     return fig
 
 
@@ -128,39 +134,31 @@ def render():
     com_estoque = sorted(todos[todos["estoque"] > 0]["ano"].unique())
     padrao = int(com_estoque[-1]) if com_estoque else anos[-1]
 
-    col1, col2 = st.columns([3, 1])
-    with col2:
+    # Controles à esquerda, estreitos: o mapa fica com o resto da largura.
+    controles, area = st.columns([1, 4.2], gap="medium")
+    with controles:
         ano = st.select_slider("Ano", options=anos, value=padrao)
-        camada = st.radio("Colorir por", ["Estoque (RAIS)", "Saldo (CAGED)",
-                                          "Remuneração (RAIS)"])
-        minimo = st.number_input("Estoque mínimo do município", 10, 5000, 50, 10)
-    with col1:
-        st.subheader(f"O mercado de TI no Brasil — {ano}")
+        camada = st.radio("Colorir por", list(METRICAS))
+        minimo = st.number_input("Estoque mínimo do município", 10, 5000, 50, 10,
+                                 help="Abaixo disso o município não vira bolha. "
+                                      "Diminuir mostra o interior; aumentar limpa o mapa.")
 
+    coluna, titulo, escala, divergente = METRICAS[camada]
     uf = dm.mapa_uf(ano)
     if uf.empty:
         st.warning(f"Sem dados para {ano}.")
         return
+    muni = dm.municipios_com_coordenada(ano, minimo)
 
-    coluna, titulo, escala = {
-        "Estoque (RAIS)": ("estoque", "Vínculos ativos", "Blues"),
-        "Saldo (CAGED)": ("saldo", "Saldo do ano", "RdBu"),
-        "Remuneração (RAIS)": ("remuneracao_sm_mediana", "Mediana (SM)", "Purples"),
-    }[camada]
-
-    esq, dir_ = st.columns(2)
-    with esq:
-        st.caption(f"**Estados** · {titulo}")
-        fig = _coropleto(uf.dropna(subset=[coluna]), coluna, titulo, escala)
+    with area:
+        st.subheader(f"O mercado de TI no Brasil — {ano}")
+        st.caption(f"Cor do estado e cor da bolha: **{titulo.lower()}**. "
+                   f"Tamanho da bolha: vínculos ativos. "
+                   f"{fmt_num(len(muni))} municípios acima do mínimo.")
+        fig = _mapa(uf, muni, coluna, titulo, escala, divergente)
         if fig:
-            st.plotly_chart(fig, width='stretch')
-    with dir_:
-        st.caption("**Municípios** · tamanho = estoque, cor = sinal do saldo")
-        muni = dm.municipios_com_coordenada(ano, minimo)
-        fig = _bolhas(muni, ano)
-        if fig:
-            st.plotly_chart(fig, width='stretch')
-        else:
+            st.plotly_chart(fig, width="stretch")
+        elif muni.empty:
             st.info("Sem municípios acima do mínimo neste ano.")
 
     total_estoque = int(uf["estoque"].sum())
@@ -184,8 +182,9 @@ def render():
         subindo = juntos.nlargest(3, "intensidade")
         caindo = juntos.nsmallest(3, "intensidade")
         _leitura(
-            "O mapa da esquerda mostra onde o mercado <strong>está</strong>; "
-            "o da direita, para onde ele <strong>se move</strong>. "
+            "A cor mostra onde o mercado <strong>está</strong> quando se escolhe o "
+            "estoque, e para onde ele <strong>se move</strong> quando se escolhe o "
+            "saldo — trocar o seletor troca a pergunta, no mesmo mapa. "
             f"Em {ano}, o maior movimento relativo ao próprio tamanho foi em "
             f"<strong>{', '.join(subindo['uf'])}</strong>, e a maior retração "
             f"em <strong>{', '.join(caindo['uf'])}</strong>. "
@@ -203,7 +202,7 @@ def render():
     lay["margin"]["l"] = 8
     fig.update_layout(**lay)
     fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, width="stretch")
 
     st.warning(
         "**A localização é a do estabelecimento, não a do trabalho.** A empresa "
