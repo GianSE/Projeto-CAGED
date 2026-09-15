@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from dashboard import (aba_historia, aba_mapa, abas_modelos, abas_rais, dados,  # noqa: E402
-                       dados_modelos, dados_rais, narrativa, tema)
+from dashboard import (aba_mapa, abas_modelos, abas_rais, dados,  # noqa: E402
+                       dados_modelos, dados_rais, modo_apresentacao, narrativa, tema)
 from dashboard.tema import fmt_compacto, fmt_num, fmt_reais  # noqa: E402
 
 st.set_page_config(page_title="Mercado de Trabalho em TI — CAGED",
@@ -30,6 +30,13 @@ st.set_page_config(page_title="Mercado de Trabalho em TI — CAGED",
 # O CSS é montado com as cores do tema ATIVO (ver tema.css): fixar cores aqui
 # deixaria o texto ilegível para quem usa o modo escuro.
 st.markdown(tema.css(), unsafe_allow_html=True)
+
+# O modo apresentação ocupa a página inteira e sai antes de qualquer consulta
+# ao CAGED: ele só depende da gold, e numa banca não pode esperar nem falhar por
+# causa de uma fonte que não usa.
+if modo_apresentacao.ativo():
+    modo_apresentacao.render()
+    st.stop()
 
 
 def leitura(texto: str):
@@ -78,6 +85,7 @@ arco_rais = (narrativa.arco_estoque(anual_rais)
              if tem_rais and anual_rais is not None else {})
 
 st.title("💻 Vinte anos do mercado de trabalho em tecnologia")
+modo_apresentacao.botao()
 st.caption("Microdados do **CAGED** (fluxo: quantos empregos foram criados) e da "
            "**RAIS** (estoque: quantos existem em 31/12) · recorte: setor de TI "
            "(CNAE) **ou** ocupação de TI (CBO)")
@@ -112,10 +120,9 @@ if tem_rais and arco_rais:
               help="Permanência no vínculo — leitura de rotatividade que o CAGED "
                    "não permite")
 
-(aba_historia_ti, aba_hist, aba_onde, aba_quem, aba_setor,
+(aba_hist, aba_onde, aba_quem, aba_setor,
  aba_estoque, aba_remun, aba_empresas,
  aba_mapa_ti, aba_prev, aba_hiato, aba_grupos, aba_dados) = st.tabs([
-    "📖 A história",
     "📈 A trajetória",
     "🏢 Onde o trabalho acontece",
     "👥 Quem é contratado",
@@ -129,13 +136,6 @@ if tem_rais and arco_rais:
     "🧭 Perfis de município",
     "🔎 Sobre os dados",
 ])
-
-# ======================================================= 0. A HISTÓRIA
-# Primeira aba de propósito: as demais estão organizadas pela ORIGEM do dado
-# (CAGED, RAIS, modelos); esta segue a ordem do ARGUMENTO, da pergunta à
-# conclusão. É por onde quem avalia a pesquisa deve começar.
-with aba_historia_ti:
-    aba_historia.render()
 
 # ======================================================= 1. A TRAJETÓRIA
 with aba_hist:
