@@ -147,5 +147,5 @@ SELECT
     ROUND(explicada, 3)     AS explicada_pelo_perfil,
     ROUND(nao_explicada, 3) AS nao_explicada
 FROM read_parquet('hf://datasets/Gianpedro/mercado-ti-gold/hiato_serie.parquet')
-WHERE comparacao = 'MASCULINO vs FEMININO'
+WHERE comparacao = 'Homem vs Mulher'
 ORDER BY ano;
