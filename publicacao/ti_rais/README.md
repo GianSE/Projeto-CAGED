@@ -55,8 +55,8 @@ Sem `mes_particao`: a RAIS não tem competência mensal. Em `rais_vinc` há
 
 | Tabela | Conteúdo | Período | Arquivos | Tamanho |
 |---|---|---|---|---|
-| `rais_estab/` | Estabelecimentos declarantes da RAIS (um registro por CNPJ/ano) | 2007–2025 | 62 | 0.03 GB |
-| `rais_vinc/` | Vínculos empregatícios da RAIS (um registro por vínculo/ano) | 2007–2025 | 678 | 1.18 GB |
+| `rais_estab/` | Estabelecimentos declarantes da RAIS (um registro por CNPJ/ano) | 2007–2025 | 19 | 0.03 GB |
+| `rais_vinc/` | Vínculos empregatícios da RAIS (um registro por vínculo/ano) | 2007–2025 | 19 | 1.13 GB |
 
 ## Métricas principais
 

@@ -147,7 +147,10 @@ def _tem_login_cli() -> bool:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Publica os parquets no Hugging Face.")
-    p.add_argument("--repo", required=True,
+    # Com padrão, e não obrigatório: os arquivos consolidados pertencem ao mesmo
+    # dataset da camada de TI — ficam na raiz dele, ao lado das partições — e o
+    # painel dispara este módulo sem passar argumento nenhum.
+    p.add_argument("--repo", default="Gianpedro/caged-tecnologia",
                    help="Destino no formato usuario/nome-do-dataset")
     p.add_argument("--privado", action="store_true",
                    help="Cria o dataset privado (padrão: público)")

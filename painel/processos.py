@@ -298,6 +298,10 @@ JOBS_MANUTENCAO = {
                    "junta cada tabela da silver num arquivo único para publicar"),
     "unificar": ("gold_caged.unificar",
                  "monta o caged_ti.parquet, as duas gerações do CAGED numa série"),
+    "publicar-consolidados": ("gold_caged.publicar_hf",
+                              "envia os arquivos unicos de cada tabela ao Hugging Face"),
+    "publicar-gold": ("gold_unificado.publicar_gold",
+                      "envia os agregados e modelos da gold ao Hugging Face"),
     "podar": ("auditoria.podar_colunas",
               "remove colunas 100% nulas geradas por mapeamento errado"),
 }
