@@ -35,6 +35,7 @@ import argparse
 import re
 import sys
 import time
+from collections import defaultdict
 
 from extracao_ftp.config_extracao import (
     BUCKET_BRONZE,
@@ -239,7 +240,63 @@ def _ano_do_caminho(caminho: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _stems_existentes(fs, bucket: str, tabela: str) -> set[str]:
+COLUNA_ORIGEM = "arquivo_bronze"
+
+
+def origens_existentes(con, fs, bucket: str, tabela: str) -> dict[int | None, set[str]]:
+    """
+    Que arquivos do bronze já estão na camada, por ano da partição.
+
+    Duas convenções convivem, e por isso há dois caminhos aqui:
+
+    - um arquivo por origem, com o nome da origem mais o índice do pedaço
+      (`rais_vinc_sp_parte00_0.parquet`): a resposta está no nome, e sai de graça
+      da listagem;
+    - um arquivo por partição, depois de `auditoria.agrupar_arquivos`
+      (`rais_vinc_2022.parquet`): o nome não diz mais nada, e a resposta está na
+      coluna `arquivo_bronze`.
+
+    Quem é qual se decide pela PRESENÇA DA COLUNA, não pelo formato do nome:
+    `caged_ajustes_2016.parquet` é nome de agrupado e também é nome de origem do
+    bronze em anos que o MTE publicou anuais. `parquet_schema` responde isso lendo
+    só o rodapé de cada arquivo, e por arquivo — um DESCRIBE sobre o conjunto
+    mostraria a união das colunas e esconderia justamente a diferença.
+    """
+    arquivos = sorted(fs.glob(f"{bucket}/{tabela}/**/*.parquet"))
+    if not arquivos:
+        return {}
+
+    lista = ", ".join(f"'s3://{c}'" for c in arquivos)
+    agrupados = {r[0].removeprefix("s3://") for r in con.execute(
+        f"SELECT DISTINCT file_name FROM parquet_schema([{lista}]) "
+        f"WHERE name = '{COLUNA_ORIGEM}'").fetchall()}
+
+    por_ano: dict[int | None, set[str]] = defaultdict(set)
+    for caminho in arquivos:
+        if caminho in agrupados:
+            continue
+        m = re.search(r"ano(?:_particao)?=(\d{4})", caminho)
+        # Tira só o índice `_{i}` do FILENAME_PATTERN. O `_parteNN` FICA: ele
+        # pode ser do nome do próprio arquivo do bronze (a RAIS vem partida em
+        # alguns anos), e remover às cegas colapsaria 37 origens numa só.
+        nome = caminho.split("/")[-1].removesuffix(".parquet").rsplit("_", 1)[0]
+        por_ano[int(m.group(1)) if m else None].add(nome)
+
+    if agrupados:
+        lista = ", ".join(f"'s3://{c}'" for c in sorted(agrupados))
+        for ano_txt, origem in con.execute(rf"""
+            SELECT DISTINCT
+                regexp_extract(filename, 'ano(?:_particao)?=(\d{{4}})', 1) AS ano,
+                {COLUNA_ORIGEM}
+            FROM read_parquet([{lista}], hive_partitioning=false,
+                              union_by_name=true, filename=true)
+        """).fetchall():
+            if origem:
+                por_ano[int(ano_txt) if ano_txt else None].add(origem)
+    return por_ano
+
+
+def _stems_existentes(con, fs, bucket: str, tabela: str) -> set[str]:
     """
     Nomes de arquivo-fonte já gravados na saída particionada.
 
@@ -248,11 +305,8 @@ def _stems_existentes(fs, bucket: str, tabela: str) -> set[str]:
     pode ser um fs.exists() por arquivo. Lista uma vez só e devolve o conjunto
     de stems — 514 chamadas de exists() ao MinIO viraram uma listagem.
     """
-    existentes = set()
-    for caminho in fs.glob(f"{bucket}/{tabela}/**/*.parquet"):
-        nome = caminho.split("/")[-1].removesuffix(".parquet")
-        existentes.add(nome.rsplit("_", 1)[0])  # tira o sufixo _{i} do FILENAME_PATTERN
-    return existentes
+    return {origem for origens in origens_existentes(con, fs, bucket, tabela).values()
+            for origem in origens}
 
 
 def _copy_particionado(destino_s3: str, stem: str, query: str) -> str:
@@ -339,7 +393,7 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
     feitos = pulados = falhas = 0
 
     # Na saída hive a checagem de "já existe" é feita contra uma listagem única.
-    ja_gravados = _stems_existentes(fs, bucket_destino, tabela) if hive and not forcar else set()
+    ja_gravados = _stems_existentes(con, fs, bucket_destino, tabela) if hive and not forcar else set()
 
     for n, origem in enumerate(arquivos, start=1):
         stem = origem.split("/")[-1].removesuffix(".parquet")
@@ -385,9 +439,19 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
                 """)
                 leitura = destino_s3
 
-            linhas = con.execute(
-                f"SELECT count(*) FROM read_parquet('{leitura}')"
-            ).fetchone()[0]
+            # Filtro que não casa com nada é resultado válido, não falha: o
+            # COPY particionado simplesmente não cria arquivo, e aí o glob de
+            # conferência não acha nada. Um COPY que falha de verdade estoura
+            # acima, antes de chegar aqui. Sem esta distinção, um pedaço de
+            # arquivo sem nenhuma linha do recorte seria contado como erro.
+            try:
+                linhas = con.execute(
+                    f"SELECT count(*) FROM read_parquet('{leitura}')"
+                ).fetchone()[0]
+            except Exception as e:
+                if "No files found" not in str(e):
+                    raise
+                linhas = 0
             total_linhas += linhas
             feitos += 1
             print(f"   [{n}/{len(arquivos)}] ✅ {origem.split('/')[-1]}: {linhas:,} linhas")

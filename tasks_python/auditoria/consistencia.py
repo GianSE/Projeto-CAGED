@@ -52,48 +52,72 @@ def _fs():
                        "region_name": MINIO_REGION})
 
 
-def _origem(caminho: str) -> str:
-    """Identidade do arquivo de origem: partição + nome, sem índice nem pedaço."""
-    partes = caminho.split("/")
-    nome = re.sub(r"_parte\d+$", "", re.sub(r"_\d{1,2}$", "",
-                  partes[-1].removesuffix(".parquet")))
-    return "/".join([p for p in partes[:-1] if "=" in p] + [nome])
+
+
+
+def _fontes(con, arquivos: list[str]) -> dict[str, str]:
+    """
+    Caminho no FTP de cada origem presente, e um parquet que a contém.
+
+    Lê uma coluna só, com valor constante por arquivo: o parquet guarda isso
+    como dicionário, então o custo é praticamente o do rodapé.
+    """
+    if not arquivos:
+        return {}
+    lista = ", ".join(f"'s3://{c}'" for c in arquivos)
+    linhas = con.execute(f"""
+        SELECT DISTINCT caminho_fonte, filename
+        FROM read_parquet([{lista}], union_by_name=true, filename=true,
+                          hive_partitioning=false)
+    """).fetchall()
+    return {caminho: arq.removeprefix("s3://") for caminho, arq in linhas if caminho}
 
 
 def completude(con, fs, bucket: str, tabela: str) -> list[str]:
-    """Toda partição do bronze tem correspondente na camada auditada?"""
-    esperado, obtido = defaultdict(set), defaultdict(set)
-    for c in fs.glob(f"{BUCKET_BRONZE}/{tabela}/**/*.parquet"):
-        if m := re.search(r"ano=(\d{4})", c):
-            esperado[int(m.group(1))].add(c.split("/")[-1].removesuffix(".parquet"))
-    for c in fs.glob(f"{bucket}/{tabela}/**/*.parquet"):
-        if m := re.search(r"ano(?:_particao)?=(\d{4})", c):
-            obtido[int(m.group(1))].add(_origem(c).split("/")[-1])
+    """
+    Todo arquivo do FTP com linhas de tecnologia tem saída na camada?
 
-    problemas = []
-    for ano in sorted(esperado):
-        e, o = len(esperado[ano]), len(obtido.get(ano, set()))
-        if o == e:
-            continue
-        faltantes = sorted(esperado[ano] - obtido.get(ano, set()))
-        # Numa camada de TI, origem que não tem NENHUMA linha de tecnologia
-        # legitimamente não gera arquivo. `caged_ajustes` em 2002 é o caso: o
-        # bronze tem o arquivo, o recorte devolve zero linhas, e a silver não
-        # grava nada. Acusar isso como falta transformaria a única verificação
-        # de completude num alarme que se aprende a ignorar.
-        if bucket == BUCKET_SILVER_TI:
-            vazias = [n for n in faltantes if _sem_tecnologia(con, tabela, ano, n)]
-            faltantes = [n for n in faltantes if n not in vazias]
-            for n in vazias:
-                print(f"      ℹ️  {tabela} {ano}: origem {n} não tem nenhuma linha "
-                      f"de tecnologia — nada a gravar")
-        if faltantes:
-            problemas.append(f"{ano}: {len(faltantes)} origem(ns) sem saída "
-                             f"({', '.join(faltantes[:3])})")
-    return problemas
+    A identidade da origem é o CAMINHO NO FTP, que está em cada linha dos dois
+    lados (`caminho_fonte`), e não o nome do arquivo: o nome muda quando a
+    camada é reparticionada ou agrupada, e comparar nome com nome já acusou 28
+    origens "sem saída" em caged_ajustes onde a contagem de linhas batia exata.
+    """
+    bronze = sorted(fs.glob(f"{BUCKET_BRONZE}/{tabela}/**/*.parquet"))
+    camada = sorted(fs.glob(f"{bucket}/{tabela}/**/*.parquet"))
+    if not bronze or not camada:
+        return []
+
+    esperado = _fontes(con, bronze)
+    obtido = set(_fontes(con, camada))
+    faltantes = sorted(set(esperado) - obtido)
+
+    # Numa camada de TI, origem que não tem NENHUMA linha de tecnologia
+    # legitimamente não gera saída. `caged_ajustes` em 2002 é o caso: o bronze
+    # tem o arquivo, o recorte devolve zero linhas, e a silver não grava nada.
+    # Acusar isso transformaria a única verificação de completude num alarme que
+    # se aprende a ignorar.
+    if bucket == BUCKET_SILVER_TI:
+        vazias = [c for c in faltantes if _sem_tecnologia(con, tabela, esperado[c])]
+        for c in vazias:
+            print(f"      ℹ️  {tabela}: origem {c.split('/')[-1]} não tem nenhuma "
+                  f"linha de tecnologia — nada a gravar")
+        faltantes = [c for c in faltantes if c not in vazias]
+
+    if not faltantes:
+        return []
+
+    # A mensagem agrupa por ano porque é assim que se procura o problema, mesmo
+    # que a comparação em si não dependa de ano nenhum.
+    por_ano = defaultdict(list)
+    for caminho in faltantes:
+        m = re.search(r"/((?:19|20)\d{2})/", caminho)
+        por_ano[m.group(1) if m else "?"].append(caminho.split("/")[-1])
+    return [f"{ano}: {len(nomes)} origem(ns) sem saída ({', '.join(sorted(nomes)[:3])})"
+            for ano, nomes in sorted(por_ano.items())]
 
 
-def _sem_tecnologia(con, tabela: str, ano: int, origem: str) -> bool:
+
+def _sem_tecnologia(con, tabela: str, arquivo_bronze: str) -> bool:
     """
     A origem tem zero linha dentro do recorte de tecnologia?
 
@@ -104,7 +128,7 @@ def _sem_tecnologia(con, tabela: str, ano: int, origem: str) -> bool:
     from gold_caged import escopo_tecnologia as esc
 
     try:
-        alvo = (f"'s3://{BUCKET_BRONZE}/{tabela}/ano={ano}/**/{origem}.parquet'")
+        alvo = f"'s3://{arquivo_bronze}'"
         colunas = [r[0] for r in con.execute(
             f"DESCRIBE SELECT * FROM read_parquet({alvo})").fetchall()]
         col_cnae, col_cbo = esc.colunas_da_tabela(tabela, colunas)

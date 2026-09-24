@@ -58,6 +58,7 @@ from extracao_ftp.config_extracao import (
     conectar_duckdb,
 )
 from gold_caged import escopo_tecnologia as esc
+from gold_unificado.dicionario_canonico import sql_canonico
 
 FONTE_VINC = f"s3://{BUCKET_SILVER_TI}/rais_vinc/**/*.parquet"
 FONTE_ESTAB = f"s3://{BUCKET_SILVER_TI}/rais_estab/**/*.parquet"
@@ -182,9 +183,9 @@ AGREGADOS = {
     # "ganham menos porque estudaram menos" de "ganham menos no mesmo nível".
     "rais_estoque_perfil": f"""
         SELECT ano_particao AS ano,
-               sexo_trabalhador_descricao AS sexo,
-               raca_cor_descricao AS raca_cor,
-               escolaridade_apos_2005_descricao AS escolaridade,
+               {sql_canonico("sexo", "sexo_trabalhador_descricao")} AS sexo,
+               {sql_canonico("raca_cor", "raca_cor_descricao")} AS raca_cor,
+               {sql_canonico("escolaridade", "escolaridade_apos_2005_descricao")} AS escolaridade,
                setor_ti, ocupacao_ti, {METRICAS}
         FROM ({BASE_VINC})
         GROUP BY 1, 2, 3, 4, 5, 6 ORDER BY 1
@@ -214,6 +215,24 @@ AGREGADOS = {
         FROM ({BASE_VINC})
         WHERE ocupacao_ti OR setor_ti
         GROUP BY 1, 2, 3, 4 ORDER BY 1, 5 DESC
+    """,
+    # A documentação do recorte, calculada do dado: que códigos CBO de fato
+    # aparecem no estoque e quantos vínculos cada um tem. Antes esta lista era
+    # escrita à mão no dashboard, e uma revisão do recorte a deixaria mentindo
+    # sem ninguém perceber.
+    "rais_recorte_cbo": f"""
+        SELECT ano_particao AS ano,
+               {esc.sql_codigo_cbo('cbo_ocupacao_2002')} AS cbo,
+               substr({esc.sql_codigo_cbo('cbo_ocupacao_2002')}, 1, 4) AS familia,
+               coalesce(any_value(cbo_ocupacao_2002_descricao),
+                        'Código recente, sem descrição no dicionário do MTE') AS ocupacao,
+               {esc.sql_area_ti('cbo_ocupacao_2002')} AS area,
+               count(*) FILTER (WHERE {ATIVO}) AS estoque_3112,
+               count(*)                        AS vinculos_no_ano
+        FROM ({BASE_VINC})
+        WHERE ocupacao_ti
+        GROUP BY 1, 2, 3, 5
+        ORDER BY 1, 3, 2
     """,
     # Estabelecimentos: o que o CAGED não tem. Quantas empresas de TI existem,
     # de que porte, e quantos vínculos elas concentram.

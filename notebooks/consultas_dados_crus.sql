@@ -118,37 +118,48 @@ LIMIT 12;
 
 
 -- 9. O recorte de tecnologia aplicado ao dado cru ------------------------------
--- É a definição da pesquisa em SQL: empresa com CNAE de TI OU ocupação com CBO
--- de TI. As famílias de CBO são os quatro primeiros dígitos, o que captura
--- códigos que o MTE criou depois (arquiteto de soluções, analista de testes).
+-- A definição da pesquisa em SQL: empresa com CNAE de TI OU ocupação com CBO de
+-- TI. Família = os 4 primeiros dígitos do CBO, DEPOIS de normalizar para 6
+-- dígitos: "21110" é o sargento da PM (021110), não a família 2111. Revisão com
+-- o orientador: a família 2112 (estatísticos) entrou; pesquisadores de
+-- ciências naturais e o programador CNC saíram.
+WITH rotulado AS (
+    SELECT *, lpad(regexp_replace(trim(cbo2002ocupacao), '[^0-9]', '', 'g'), 6, '0') AS cbo6
+    FROM read_parquet('hf://datasets/Gianpedro/bronze_caged/caged_mov/ano=2025/mes=6/*.parquet')
+),
+recorte AS (
+    SELECT *,
+        ( substr(cbo6, 1, 4) IN ('1236','1425','2031','2112','2122','2123','2124','3171','3172')
+          OR cbo6 IN ('313220','313305','142135') )
+        AND cbo6 NOT IN ('203110','203115','203120','203125','317115')      AS ocupacao_ti,
+        subclasse IN ('6201500','6201501','6201502','6202300','6203100',
+                      '6204000','6209100','6311900','6319400','6399200')        AS setor_ti
+    FROM rotulado
+)
 SELECT
-    count(*)                                               AS movimentacoes_ti,
-    count(*) FILTER (WHERE saldomovimentacao = '1')        AS admissoes,
-    count(*) FILTER (WHERE substr(cbo2002ocupacao, 1, 4) IN
-        ('1236','1425','2031','2122','2123','2124','3171','3172')
-        OR cbo2002ocupacao IN ('313220','313305','142135'))  AS por_ocupacao,
-    count(*) FILTER (WHERE subclasse IN
-        ('6201500','6201501','6201502','6202300','6203100',
-         '6204000','6209100','6311900','6319400','6399200'))  AS por_setor
-FROM read_parquet('hf://datasets/Gianpedro/bronze_caged/caged_mov/ano=2025/mes=6/*.parquet')
-WHERE substr(cbo2002ocupacao, 1, 4) IN
-        ('1236','1425','2031','2122','2123','2124','3171','3172')
-   OR cbo2002ocupacao IN ('313220','313305','142135')
-   OR subclasse IN ('6201500','6201501','6201502','6202300','6203100',
-                    '6204000','6209100','6311900','6319400','6399200');
+    count(*)                                             AS movimentacoes_ti,
+    count(*) FILTER (WHERE saldomovimentacao = '1')      AS admissoes,
+    count(*) FILTER (WHERE ocupacao_ti)                  AS por_ocupacao,
+    count(*) FILTER (WHERE setor_ti)                     AS por_setor,
+    count(*) FILTER (WHERE substr(cbo6, 1, 4) = '2112')  AS estatisticos_2112
+FROM recorte
+WHERE ocupacao_ti OR setor_ti;
 
 
 -- 10. O cru reproduz a camada publicada? ---------------------------------------
 -- O mesmo mês, contado no dado bruto e na silver de TI já tratada. Se os dois
 -- números baterem, o recorte publicado é reprodutível a partir da fonte.
-WITH cru AS (
-    SELECT count(*) AS linhas
+WITH rotulado AS (
+    SELECT subclasse, lpad(regexp_replace(trim(cbo2002ocupacao), '[^0-9]', '', 'g'), 6, '0') AS cbo6
     FROM read_parquet('hf://datasets/Gianpedro/bronze_caged/caged_mov/ano=2025/mes=6/*.parquet')
-    WHERE substr(cbo2002ocupacao, 1, 4) IN
-            ('1236','1425','2031','2122','2123','2124','3171','3172')
-       OR cbo2002ocupacao IN ('313220','313305','142135')
+),
+cru AS (
+    SELECT count(*) AS linhas FROM rotulado
+    WHERE ( ( substr(cbo6, 1, 4) IN ('1236','1425','2031','2112','2122','2123','2124','3171','3172')
+              OR cbo6 IN ('313220','313305','142135') )
+            AND cbo6 NOT IN ('203110','203115','203120','203125','317115') )
        OR subclasse IN ('6201500','6201501','6201502','6202300','6203100',
-                        '6204000','6209100','6311900','6319400','6399200')
+                      '6204000','6209100','6311900','6319400','6399200')
 ),
 publicado AS (
     SELECT count(*) AS linhas

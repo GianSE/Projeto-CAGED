@@ -49,6 +49,7 @@ from extracao_ftp.config_extracao import (
     conectar_duckdb,
 )
 from gold_caged import escopo_tecnologia as esc
+from gold_unificado.dicionario_canonico import sql_canonico
 
 FONTE = f"s3://{BUCKET_SILVER_TI}/caged_mov/**/*.parquet"
 
@@ -101,9 +102,9 @@ AGREGADOS = {
     """,
     "perfil_demografico": f"""
         SELECT competenciamov_data AS competencia,
-               sexo_descricao AS sexo,
-               racacor_descricao AS raca_cor,
-               graudeinstrucao_descricao AS escolaridade,
+               {sql_canonico("sexo", "sexo_descricao")} AS sexo,
+               {sql_canonico("raca_cor", "racacor_descricao")} AS raca_cor,
+               {sql_canonico("escolaridade", "graudeinstrucao_descricao")} AS escolaridade,
                setor_ti, ocupacao_ti, {METRICAS}
         FROM ({BASE_ROTULADA})
         WHERE competenciamov_data IS NOT NULL

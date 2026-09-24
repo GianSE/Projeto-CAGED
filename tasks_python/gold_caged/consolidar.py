@@ -54,8 +54,15 @@ def consolidar(con, tabela: str) -> bool:
     destino = DIR_SAIDA / f"{tabela}.parquet"
 
     try:
+        # `union_by_name` porque a série NÃO tem as mesmas colunas do começo ao
+        # fim, e isso é do dado, não defeito: o CAGED antigo trazia bairros de
+        # São Paulo, Rio e Fortaleza até 2007, e ganhou `ind_trab_intermitente` e
+        # `ind_trab_parcial` em 2018, com a reforma trabalhista. Um `SELECT *` sem
+        # isso casa coluna por POSIÇÃO e falha no primeiro arquivo de schema
+        # diferente. O arquivo único carrega a união, com nulo no ano em que a
+        # coluna não existia — que é a informação correta.
         colunas = [r[0] for r in con.execute(
-            f"DESCRIBE SELECT * FROM read_parquet('{origem}') LIMIT 0"
+            f"DESCRIBE SELECT * FROM read_parquet('{origem}', union_by_name=true) LIMIT 0"
         ).fetchall()]
     except Exception:
         print(f"   ⏭️  {tabela}: sem dados na silver, pulando")
@@ -68,7 +75,7 @@ def consolidar(con, tabela: str) -> bool:
 
     try:
         con.execute(f"""
-            COPY (SELECT * FROM read_parquet('{origem}') {ordem})
+            COPY (SELECT * FROM read_parquet('{origem}', union_by_name=true) {ordem})
             TO '{destino.as_posix()}' (
                 FORMAT PARQUET,
                 COMPRESSION '{PARQUET_COMPRESSION.upper()}',

@@ -220,6 +220,11 @@
           <option value="auditar">🔍 Auditar consistência</option>
           <option value="tipar">🔢 Tipar numéricas (VARCHAR → DOUBLE)</option>
           <option value="harmonizar">🔤 Harmonizar nomes de coluna</option>
+          <option value="agrupar">📦 Agrupar arquivos pequenos por partição</option>
+          <option value="reconstruir">🏗️ Reconstruir camadas derivadas</option>
+          <option value="consolidar">🧱 Consolidar tabelas (arquivo único)</option>
+          <option value="unificar">🔗 Unificar as duas gerações do CAGED</option>
+          <option value="recorte">🎯 Aplicar revisão do recorte de TI</option>
           <option value="reparticionar">📐 Uniformizar profundidade das partições</option>
           <option value="repor">📥 Repor silver do Hub</option>
         </select>
@@ -752,6 +757,8 @@ async function rodarManutencao(ev) {
     harmonizar: 'Repor a RAIS do Hub renomeando colunas para o vocabulário canônico.\n\n' +
                 'Só grava onde ainda não existe arquivo local.',
     repor: 'Repor a silver a partir do que já está publicado no Hub.',
+    reconstruir: 'Reconstruir, em ordem, gold da RAIS, mapa, perfis de município, modelos e consolidados do CAGED. A auditoria roda primeiro: se a silver tiver inconsistência, nada é reconstruído.',
+    recorte: 'Aplicar a revisão do recorte de TI na silver: entra a família 2112 (estatísticos) e saem pesquisadores de ciências naturais e o programador CNC. Cada arquivo é conferido por contagem antes de ser substituído.',
     reparticionar: 'Regravar sob mes_particao= os arquivos que estão um nível acima do resto da tabela.\n\n' +
                    'Sem isso a tabela não pode ser lida inteira (Hive partition mismatch). ' +
                    'O original só é removido depois de conferir que a contagem de linhas bate.',

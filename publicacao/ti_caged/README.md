@@ -56,10 +56,10 @@ Filtrar por ano ou mês lê só as pastas correspondentes, sem tocar no resto.
 
 | Tabela | Conteúdo | Período | Arquivos | Tamanho |
 |---|---|---|---|---|
-| `caged_mov/` | Movimentações do Novo CAGED (2020+) | 2020-01 → 2026-06 | 156 | 0.21 GB |
-| `caged_for/` | Movimentações declaradas fora do prazo (Novo CAGED) | 2020-02 → 2026-06 | 154 | 0.01 GB |
-| `caged_exc/` | Exclusões de movimentações (Novo CAGED) | 2020-04 → 2026-06 | 150 | 0.00 GB |
-| `caged_old/` | CAGED antigo — CAGEDEST (2007–2019) | 2007-01 → 2019-12 | 324 | 0.22 GB |
+| `caged_mov/` | Movimentações do Novo CAGED (2020+) | 2020-01 → 2026-06 | 78 | 0.11 GB |
+| `caged_for/` | Movimentações declaradas fora do prazo (Novo CAGED) | 2020-02 → 2026-06 | 77 | 0.00 GB |
+| `caged_exc/` | Exclusões de movimentações (Novo CAGED) | 2020-04 → 2026-06 | 75 | 0.00 GB |
+| `caged_old/` | CAGED antigo — CAGEDEST (2007–2019) | 2007-01 → 2019-12 | 156 | 0.11 GB |
 | `caged_ajustes/` | Ajustes e declarações fora do prazo (CAGED antigo) | 2003-01 → 2019-12 | 204 | 0.01 GB |
 
 `mes_particao=__HIVE_DEFAULT_PARTITION__` aparece em `caged_ajustes`: os

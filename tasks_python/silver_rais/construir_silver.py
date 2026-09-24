@@ -33,6 +33,7 @@ from extracao_ftp.config_extracao import (
     conectar_duckdb,
 )
 from gold_caged import escopo_tecnologia as esc
+from silver_caged.construir_silver import origens_existentes
 from silver_caged.dicionarios import chave_normalizada, criar_view, existe
 from silver_rais import mapeamento as mp
 
@@ -245,7 +246,7 @@ def _colunas_arquivo(con, caminho_s3: str) -> list[str]:
         return []
 
 
-def _stems_existentes(fs, bucket: str, tabela: str) -> set[str]:
+def _stems_existentes(con, fs, bucket: str, tabela: str) -> set[str]:
     """
     O que já foi gravado, identificado por ANO + arquivo de origem.
 
@@ -255,11 +256,15 @@ def _stems_existentes(fs, bucket: str, tabela: str) -> set[str]:
     ao primeiro processado — 2007 saiu com 37 arquivos e 2009 com UM, sem erro
     nenhum no log.
     """
+    # Depois do agrupamento (`auditoria.agrupar_arquivos`) uma partição inteira
+    # é UM arquivo, e o nome dele não diz mais que pedaços contém — a resposta
+    # está na coluna `arquivo_bronze`. Sem consultá-la, a retomada acharia que
+    # nada foi gravado, reconstruiria tudo AO LADO do agrupado e a partição
+    # ficaria com as linhas em dobro, sem erro nenhum no log.
     existentes = set()
-    for caminho in fs.glob(f"{bucket}/{tabela}/**/*.parquet"):
-        nome = caminho.split("/")[-1].removesuffix(".parquet")
-        m = re.search(r"ano_particao=(\d{4})", caminho)
-        existentes.add(f"{m.group(1) if m else '?'}/{nome.rsplit('_', 1)[0]}")
+    for ano, origens in origens_existentes(con, fs, bucket, tabela).items():
+        for origem in origens:
+            existentes.add(f"{ano if ano is not None else '?'}/{origem}")
     return existentes
 
 
@@ -393,7 +398,7 @@ def construir(con, fs, tabela: str, so_tecnologia: bool = True,
     # Dicionários uma vez por tabela, a partir da união das colunas de todos os
     # arquivos — não uma vez por arquivo.
     dicionarios = preparar_dicionarios(con, fs, tabela, _colunas_bronze(con, tabela))
-    ja_gravados = set() if forcar else _stems_existentes(fs, bucket_destino, tabela)
+    ja_gravados = set() if forcar else _stems_existentes(con, fs, bucket_destino, tabela)
 
     destino_s3 = f"s3://{bucket_destino}/{tabela}"
     total_linhas = feitos = pulados = falhas = 0

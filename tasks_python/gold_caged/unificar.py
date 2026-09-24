@@ -34,6 +34,7 @@ from extracao_ftp.config_extracao import (
     conectar_duckdb,
 )
 from gold_caged.cnae_secao import sql_secao
+from gold_unificado.dicionario_canonico import sql_canonico
 from gold_caged.escopo_tecnologia import sql_area_ti
 
 DIR_SAIDA = Path(__file__).resolve().parents[2] / "publicacao" / "detalhado"
@@ -59,9 +60,9 @@ def sql_unificado() -> str:
             cbo2002ocupacao                    AS cbo,
             cbo2002ocupacao_descricao          AS ocupacao,
             {sql_area_ti("cbo2002ocupacao")}   AS area_ti,
-            sexo_descricao                     AS sexo,
-            racacor_descricao                  AS raca_cor,
-            graudeinstrucao_descricao          AS escolaridade,
+            {sql_canonico("sexo", "sexo_descricao")} AS sexo,
+            {sql_canonico("raca_cor", "racacor_descricao")} AS raca_cor,
+            {sql_canonico("escolaridade", "graudeinstrucao_descricao")} AS escolaridade,
             idade,
             saldomovimentacao                  AS saldo,
             salario                            AS salario,
@@ -83,9 +84,9 @@ def sql_unificado() -> str:
             cbo_2002_ocupacao                  AS cbo,
             cbo_2002_ocupacao_descricao        AS ocupacao,
             {sql_area_ti("cbo_2002_ocupacao")}  AS area_ti,
-            sexo_descricao                     AS sexo,
-            raca_cor_descricao                 AS raca_cor,
-            grau_instrucao_descricao           AS escolaridade,
+            {sql_canonico("sexo", "sexo_descricao")} AS sexo,
+            {sql_canonico("raca_cor", "raca_cor_descricao")} AS raca_cor,
+            {sql_canonico("escolaridade", "grau_instrucao_descricao")} AS escolaridade,
             idade,
             saldo_mov                          AS saldo,
             salario_mensal                     AS salario,

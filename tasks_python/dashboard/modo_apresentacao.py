@@ -3,8 +3,8 @@ Modo apresentação: o storytelling da pesquisa em slides de tela cheia.
 
 POR QUE UM MODO À PARTE, E NÃO MAIS UMA ABA
 -------------------------------------------
-Uma aba compete com as outras doze pela atenção e herda o cabeçalho, as abas e
-a barra do Streamlit. Numa banca isso é ruído: o que se quer projetar é UMA
+Uma aba compete com as outras pela atenção e herda o cabeçalho, as abas e a
+barra do Streamlit. Numa banca isso é ruído: o que se quer projetar é UMA
 afirmação e a evidência dela, grande, sem nada em volta.
 
 Aqui cada slide é uma conclusão com um único visual. A navegação vai para o
@@ -337,7 +337,11 @@ def s_funcao():
     _roteiro([
         "Achado central da pesquisa: tecnologia é função da economia, não um setor.",
         f"Em {ano}, {fmt_num(fora)} profissionais de TI estão em bancos, varejo, indústria, saúde e governo; {fmt_num(dentro)} em empresas de software.",
-        "E não estão em posição pior: ganham mais e ficam mais tempo — duas evidências independentes na mesma direção.",
+        (f"E não estão em posição pior: mediana de "
+         f"{_dec(a.loc[ah.LENTE_FORA, 'remuneracao_sm_mediana'], 2)} SM fora contra "
+         f"{_dec(a.loc[ah.LENTE_DENTRO, 'remuneracao_sm_mediana'], 2)} SM dentro, e "
+         f"{_dec(a.loc[ah.LENTE_FORA, 'tempo_emprego_meses'], 0)} contra "
+         f"{_dec(a.loc[ah.LENTE_DENTRO, 'tempo_emprego_meses'], 0)} meses de casa."),
     ])
 
 
@@ -491,7 +495,7 @@ def s_remuneracao():
 
 
 def s_genero():
-    df = dm.hiato("MASCULINO vs FEMININO").sort_values("ano")
+    df = dm.hiato("Homem vs Mulher").sort_values("ano")
     if df.empty:
         return
     ini, fim = df.iloc[0], df.iloc[-1]
@@ -521,9 +525,9 @@ def s_genero():
 
 
 def s_raca():
-    comparacoes = [("Homens × mulheres", "MASCULINO vs FEMININO"),
-                   ("Branca × parda", "BRANCA vs PARDA"),
-                   ("Branca × preta", "BRANCA vs PRETA")]
+    comparacoes = [("Homens × mulheres", "Homem vs Mulher"),
+                   ("Branca × parda", "Branca vs Parda"),
+                   ("Branca × preta", "Branca vs Preta")]
     linhas = []
     for nome, chave in comparacoes:
         df = dm.hiato(chave)
@@ -591,8 +595,8 @@ def s_estabilidade():
     notas = [f"Pico de risco com {pico['tempo_de_casa']} de casa: {_pct(pico['risco_%'])} ao ano."]
     if not sexo.empty and "5-10a" in sexo:
         s = sexo.set_index("grupo")["5-10a"]
-        if {"MASCULINO", "FEMININO"} <= set(s.index):
-            notas.append(f"Homens {_pct(s['MASCULINO'])} contra mulheres {_pct(s['FEMININO'])}: a desigualdade de gênero está no salário, não na permanência.")
+        if {"Homem", "Mulher"} <= set(s.index):
+            notas.append(f"Homens {_pct(s['Homem'])} contra mulheres {_pct(s['Mulher'])}: a desigualdade de gênero está no salário, não na permanência.")
     notas.append("Método: tábua de período. Kaplan-Meier direto dava 48 anos de mediana — erro de corte transversal que foi corrigido.")
     _roteiro(notas)
 
@@ -668,7 +672,7 @@ def s_conclusoes():
     _cabecalho("Conclusões", "O que a pesquisa permite afirmar")
     anual = dr.estoque_anual().sort_values("ano")
     lentes = dr.lentes()
-    sexo = dm.hiato("MASCULINO vs FEMININO").sort_values("ano")
+    sexo = dm.hiato("Homem vs Mulher").sort_values("ano")
     prev, proj = dm.previsao(), dm.nowcast_projecao()
 
     itens = []
@@ -702,9 +706,6 @@ def s_conclusoes():
 
 def s_limites():
     _cabecalho("Limitações e próximos passos", "O que os dados não permitem afirmar — e o que vem depois")
-    obs = pd.DataFrame(ah.CBO_OBSERVADOS_2024, columns=["familia", "cbo", "ocupacao", "vinculos", "obs"])
-    a_mais = obs[obs["obs"] == "revisar"]["vinculos"].sum()
-    parte = a_mais / obs["vinculos"].sum() * 100
     c1, c2 = st.columns(2)
     c1.markdown(
         '<div class="slide-lista">'
@@ -715,14 +716,14 @@ def s_limites():
         "</div>", unsafe_allow_html=True)
     c2.markdown(
         '<div class="slide-lista">'
-        f"<p><strong>Recorte a revisar.</strong> A seleção por família de CBO trouxe ocupações que não são de TI "
-        f"(pesquisadores de ciências naturais, programador CNC): {fmt_num(a_mais)} vínculos, ~{_pct(parte, 0)}.</p>"
-        "<p><strong>Recorte a ampliar.</strong> A família 2112 (estatísticos), onde muitos analistas de dados "
-        "são registrados, ficou de fora: 2.324 admissões no CAGED de 2025, 70–75% fora de empresa de TI.</p>"
+        "<p><strong>Recorte revisado com o orientador.</strong> Entrou a família 2112 (estatísticos), "
+        "onde analistas e cientistas de dados são registrados. Saíram pesquisadores de ciências "
+        "naturais e o programador CNC, que vinham de carona na seleção por família.</p>"
+        "<p><strong>O recorte é uma escolha.</strong> Matemáticos e técnicos de telecomunicações "
+        "ficaram de fora por decisão metodológica: têm pouca presença em empresas de TI.</p>"
         "<p><strong>Extensões.</strong> Retenção por gênero (entrada no CAGED × estoque na RAIS) e "
         "decomposição regional shift-share.</p>"
         "</div>", unsafe_allow_html=True)
-
 
 def s_apendice():
     ah._apendice()

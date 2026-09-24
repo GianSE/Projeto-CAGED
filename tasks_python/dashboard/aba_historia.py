@@ -3,10 +3,10 @@ A história: o argumento da pesquisa, da pergunta à conclusão.
 
 POR QUE ESTA ABA EXISTE
 -----------------------
-As outras abas estão organizadas pela ORIGEM do dado — CAGED, RAIS, modelos.
-Isso é como o dado foi produzido, não o que ele diz. Quem avalia a pesquisa não
-pergunta "o que tem na RAIS", pergunta "o que você concluiu". Sem um fio
-condutor, cada gráfico é verdadeiro e o conjunto não chega a lugar nenhum.
+As outras abas respondem UMA pergunta de pesquisa cada, com a evidência dela.
+Falta o fio que liga as cinco: por que a pergunta importa, o que se concluiu de
+cada uma e como elas se sustentam juntas. Sem isso, cada aba é verdadeira e o
+conjunto não chega a lugar nenhum.
 
 Aqui a ordem é a do argumento: cada seção abre com a PERGUNTA, afirma a
 CONCLUSÃO, e só então mostra a evidência. As demais abas continuam sendo o lugar
@@ -160,9 +160,19 @@ def _funcao():
     fora, dentro = val(LENTE_FORA, "estoque"), val(LENTE_DENTRO, "estoque")
     parte_fora = fora / (fora + dentro) * 100 if fora + dentro else 0
 
+    # A comparação é CALCULADA, e não afirmada: quem está fora ganhava MENOS em
+    # 2007 (5,22 contra 5,74 SM) e passou a ganhar mais ao longo da série. Uma
+    # frase fixa aqui viraria afirmação falsa na próxima revisão do recorte.
+    sm_fora, sm_dentro = val(LENTE_FORA, "remuneracao_sm_mediana"), val(LENTE_DENTRO, "remuneracao_sm_mediana")
+    t_fora, t_dentro = val(LENTE_FORA, "tempo_emprego_meses"), val(LENTE_DENTRO, "tempo_emprego_meses")
+    ganha = "ganham" if sm_fora > sm_dentro else "ganham menos"
+    fica = "ficam mais" if t_fora > t_dentro else "ficam menos"
+    remate = (f"e {ganha} e {fica}" if (sm_fora > sm_dentro) == (t_fora > t_dentro)
+              else f"e {ganha}, mas {fica}")
+
     _secao("Onde está o trabalho de TI?",
            f"{_pct(parte_fora, 0)} dos profissionais de TI trabalham fora das "
-           f"empresas de TI — e ganham e ficam mais")
+           f"empresas de TI — {remate}")
 
     ordem = [LENTE_FORA, LENTE_OUTRA, LENTE_DENTRO]
     rotulos = {LENTE_FORA: "Profissional de TI fora de empresa de TI",
@@ -245,7 +255,7 @@ def _remuneracao():
 
 # ------------------------------------------------------------ 4. gênero
 def _genero():
-    df = dm.hiato("MASCULINO vs FEMININO")
+    df = dm.hiato("Homem vs Mulher")
     if df.empty:
         return
     df = df.sort_values("ano")
@@ -294,8 +304,8 @@ def _genero():
 
 # -------------------------------------------------------------- 5. raça
 def _raca():
-    parda, preta = dm.hiato("BRANCA vs PARDA"), dm.hiato("BRANCA vs PRETA")
-    sexo = dm.hiato("MASCULINO vs FEMININO")
+    parda, preta = dm.hiato("Branca vs Parda"), dm.hiato("Branca vs Preta")
+    sexo = dm.hiato("Homem vs Mulher")
     if parda.empty or preta.empty:
         return
 
@@ -387,9 +397,9 @@ def _estabilidade():
                   f"passam de cinco anos; nos de {menor['grupo'].lower()}, {_pct(menor['5-10a'])}.")
     if not sexo.empty and "5-10a" in sexo:
         s = sexo.set_index("grupo")["5-10a"]
-        if {"MASCULINO", "FEMININO"} <= set(s.index):
-            texto += (f" Entre homens e mulheres a diferença é mínima ({_pct(s['MASCULINO'])} "
-                      f"contra {_pct(s['FEMININO'])}) — a desigualdade de gênero em TI está no "
+        if {"Homem", "Mulher"} <= set(s.index):
+            texto += (f" Entre homens e mulheres a diferença é mínima ({_pct(s['Homem'])} "
+                      f"contra {_pct(s['Mulher'])}) — a desigualdade de gênero em TI está no "
                       f"salário, não na permanência.")
     _texto(texto)
 
@@ -523,7 +533,7 @@ def _conclusoes():
 
     anual = dr.estoque_anual().sort_values("ano")
     lentes = dr.lentes()
-    sexo = dm.hiato("MASCULINO vs FEMININO").sort_values("ano")
+    sexo = dm.hiato("Homem vs Mulher").sort_values("ano")
     prev = dm.previsao()
     proj = dm.nowcast_projecao()
 
@@ -583,8 +593,8 @@ def _conclusoes():
         "medida de causa.\n"
         "- **Série homogênea no CAGED.** Em 2020 muda a data de referência da movimentação "
         "(competência declarada → competência do fato).\n"
-        "- **Recorte completo de ocupações.** Analistas de dados registrados como estatísticos "
-        "(CBO 2112) ficam de fora quando não estão em empresa de TI — ver apêndice.")
+        "- **O recorte é uma escolha.** Ocupações de fronteira (matemáticos, técnicos de "
+        "telecomunicações) ficaram de fora por decisão metodológica — ver apêndice.")
 
     with st.expander("Roteiro para apresentar"):
         st.markdown(
@@ -593,53 +603,17 @@ def _conclusoes():
             "3. O achado central: TI como função, fora das empresas de TI.\n"
             "4. As desigualdades: gênero com parte explicada negativa; raça como acesso.\n"
             "5. O rigor: os erros da fonte e de método encontrados e corrigidos.\n"
-            "6. Limitações e próximos passos: CBO 2112 e ausência de painel.")
+            "6. Limitações e próximos passos: recorte revisado e ausência de painel.")
 
 
 # ------------------------------------------------------------ 10. apêndice
-# Códigos de seis dígitos efetivamente OBSERVADOS no estoque de TI da RAIS 2024,
-# levantados sobre a silver de TI. Não é agregado da gold — é a documentação do
-# recorte, e por isso fica aqui como referência fixa.
-CBO_OBSERVADOS_2024 = [
-    ("1236", "123605", "Diretor de serviços de informática", 4167, ""),
-    ("1425", "142505", "Gerente de rede", 8207, ""),
-    ("1425", "142510", "Gerente de desenvolvimento de sistemas", 19717, ""),
-    ("1425", "142515", "Gerente de produção de TI", 7985, ""),
-    ("1425", "142520", "Gerente de projetos de TI", 28544, ""),
-    ("1425", "142525", "Gerente de segurança de TI", 1963, ""),
-    ("1425", "142530", "Gerente de suporte técnico de TI", 11422, ""),
-    ("1425", "142535", "Tecnólogo em gestão da TI", 5395, ""),
-    ("2031", "203105", "Pesquisador em ciências da computação e informática", 3189, ""),
-    ("2031", "203110", "Pesquisador em ciências da terra e meio ambiente", 540, "revisar"),
-    ("2031", "203115", "Pesquisador em física", 62, "revisar"),
-    ("2031", "203120", "Pesquisador em matemática", 876, "revisar"),
-    ("2031", "203125", "Pesquisador em química", 1335, "revisar"),
-    ("2122", "212205", "Engenheiro de aplicativos em computação", 9798, ""),
-    ("2122", "212210", "Engenheiro de equipamentos em computação", 1073, ""),
-    ("2122", "212215", "Engenheiro de sistemas operacionais em computação", 10934, ""),
-    ("2123", "212305", "Administrador de banco de dados", 13459, ""),
-    ("2123", "212310", "Administrador de redes", 7127, ""),
-    ("2123", "212315", "Administrador de sistemas operacionais", 11080, ""),
-    ("2123", "212320", "Administrador em segurança da informação", 13881, ""),
-    ("2124", "212405", "Analista de desenvolvimento de sistemas", 282365, ""),
-    ("2124", "212410", "Analista de redes e de comunicação de dados", 50607, ""),
-    ("2124", "212415", "Analista de sistemas de automação", 11062, ""),
-    ("2124", "212420", "Analista de suporte computacional", 107789, ""),
-    ("2124", "212425", "Código recente da família, sem descrição no dicionário", 6402, ""),
-    ("2124", "212430", "Código recente da família, sem descrição no dicionário", 14267, ""),
-    ("3171", "317105", "Programador de internet", 5067, ""),
-    ("3171", "317110", "Programador de sistemas de informação", 88970, ""),
-    ("3171", "317115", "Programador de máquinas-ferramenta com comando numérico", 6081, "revisar"),
-    ("3171", "317120", "Programador de multimídia", 2122, ""),
-    ("3172", "317205", "Operador de computador", 32339, ""),
-    ("3172", "317210", "Técnico de apoio ao usuário de informática (helpdesk)", 86815, ""),
-    ("avulso", "142135", "Encarregado de proteção de dados (DPO)", 379, ""),
-    ("avulso", "313220", "Técnico em manutenção de equipamentos de informática", 49255, ""),
-    ("avulso", "313305", "Técnico de comunicação de dados", 6889, ""),
-]
-
-
 def _apendice():
+    """
+    O recorte documentado a partir do próprio dado.
+
+    A lista de códigos vem da tabela `rais_recorte_cbo` da gold, e não de uma
+    lista escrita aqui: quando o recorte mudar, o apêndice muda junto.
+    """
     from gold_caged import escopo_tecnologia as esc
 
     st.divider()
@@ -649,7 +623,7 @@ def _apendice():
         "Um vínculo entra na pesquisa se a empresa tem **CNAE de TI** ou se a ocupação tem "
         "**CBO de TI**. As ocupações são selecionadas por **família** (os quatro primeiros "
         "dígitos), para capturar códigos que o MTE cria ao longo do tempo, mais três códigos "
-        "avulsos.")
+        "avulsos — e menos os códigos que a família traz sem serem de tecnologia.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -659,30 +633,43 @@ def _apendice():
             width="stretch", hide_index=True)
     with col2:
         st.markdown("**Ocupação — famílias CBO 2002**")
-        linhas = [{"CBO": k, "família": v} for k, v in esc.CBO_FAMILIAS_TI.items()]
-        linhas += [{"CBO": k, "família": f"{v} (avulso)"} for k, v in esc.CBO_AVULSOS_TI.items()]
+        linhas = [{"CBO": k, "família": v,
+                   "situação": "entrou na revisão" if k in esc.CBO_FAMILIAS_ACRESCENTADAS else ""}
+                  for k, v in esc.CBO_FAMILIAS_TI.items()]
+        linhas += [{"CBO": k, "família": f"{v} (avulso)", "situação": ""}
+                   for k, v in esc.CBO_AVULSOS_TI.items()]
         st.dataframe(pd.DataFrame(linhas), width="stretch", hide_index=True)
+        st.markdown("**Excluídos** — vinham na família, mas não são tecnologia")
+        st.dataframe(pd.DataFrame([{"CBO": k, "ocupação": v}
+                                   for k, v in esc.CBO_EXCLUIDOS.items()]),
+                     width="stretch", hide_index=True)
 
-    obs = pd.DataFrame(CBO_OBSERVADOS_2024,
-                       columns=["família", "CBO", "ocupação", "vínculos 2024", "observação"])
-    st.markdown(f"**Códigos observados no estoque de 2024** — "
-                f"{fmt_num(obs['vínculos 2024'].sum())} vínculos ativos")
-    st.dataframe(obs, width="stretch", hide_index=True, height=420)
+    obs = dm.ler("rais_recorte_cbo")
+    if obs.empty:
+        st.info("A tabela de códigos observados ainda não foi construída "
+                "(python -m gold_rais.construir_gold).")
+        return
+    ano = int(obs["ano"].max())
+    atual = obs[obs["ano"] == ano].sort_values(["familia", "cbo"])
+    total = atual["estoque_3112"].sum()
+    dados = atual[atual["familia"] == "2112"]["estoque_3112"].sum()
+    st.markdown(f"**Códigos observados no estoque de {ano}** — "
+                f"{fmt_num(total)} vínculos ativos com ocupação de TI")
+    st.dataframe(
+        atual[["familia", "cbo", "ocupacao", "area", "estoque_3112"]].rename(columns={
+            "familia": "família", "cbo": "CBO", "ocupacao": "ocupação",
+            "area": "área", "estoque_3112": f"vínculos {ano}"}),
+        width="stretch", hide_index=True, height=420)
 
-    a_mais = obs[obs["observação"] == "revisar"]["vínculos 2024"].sum()
-    st.warning(
-        f"**Revisão sugerida do recorte.** *Possivelmente incluídos a mais:* a seleção por família "
-        f"trouxe pesquisadores de ciências da terra, física, matemática e química (família 2031) e "
-        f"o programador de máquinas CNC (3171-15), que é da indústria. Somam "
-        f"{fmt_num(a_mais)} vínculos — cerca de "
-        f"{_pct(a_mais / obs['vínculos 2024'].sum() * 100, 0)} do total —, então não alteram as "
-        f"conclusões, mas devem ser excluídos ou justificados.\n\n"
-        f"*Possivelmente deixados de fora:* a família **2112 (estatísticos)** não está no recorte. "
-        f"No CAGED de 2025 foram 2.324 admissões nesses códigos, entre 70% e 75% fora de empresas "
-        f"de TI — sobretudo no setor financeiro —, com salário mediano de contratação entre "
-        f"R$ 6.200 e R$ 9.000. É onde muitos analistas e cientistas de dados são registrados. "
-        f"Incluí-la exigiria refazer o recorte e todas as tabelas; fica como próximo passo declarado.")
-
+    st.info(
+        f"**Revisão do recorte, feita com o orientador.** *Entrou* a família **2112 "
+        f"(estatísticos)**, onde analistas e cientistas de dados são registrados: são "
+        f"{fmt_num(dados)} vínculos ativos em {ano}, e 72% das admissões desses códigos no CAGED "
+        f"de 2025 foram fora de empresas de TI. *Saíram* os pesquisadores de física, química, "
+        f"matemática e ciências da terra (família 2031) e o programador de máquinas CNC (3171-15), "
+        f"que vinham de carona na seleção por família sem serem tecnologia. Sai mais do que entra: "
+        f"no CAGED, 18,5 mil movimentações entraram e 56 mil saíram — o programador CNC pesava "
+        f"muito mais do que parecia. O recorte ficou menor e mais limpo.")
 
 # ---------------------------------------------------------------- render
 def render():

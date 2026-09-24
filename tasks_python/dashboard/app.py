@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from dashboard import (aba_mapa, abas_modelos, abas_rais, dados,  # noqa: E402
+from dashboard import (aba_historia, aba_mapa, abas_modelos, abas_rais, dados,  # noqa: E402
                        dados_modelos, dados_rais, modo_apresentacao, narrativa, tema)
 from dashboard.tema import fmt_compacto, fmt_num, fmt_reais  # noqa: E402
 
@@ -120,25 +120,70 @@ if tem_rais and arco_rais:
               help="Permanência no vínculo — leitura de rotatividade que o CAGED "
                    "não permite")
 
-(aba_hist, aba_onde, aba_quem, aba_setor,
- aba_estoque, aba_remun, aba_empresas,
- aba_mapa_ti, aba_prev, aba_hiato, aba_grupos, aba_dados) = st.tabs([
-    "📈 A trajetória",
-    "🏢 Onde o trabalho acontece",
-    "👥 Quem é contratado",
-    "🗺️ Setores e regiões",
-    "📦 Estoque (RAIS)",
-    "💰 Remuneração (RAIS)",
-    "🏭 Empresas (RAIS)",
-    "🗺️ Mapa do Brasil",
-    "🔮 Previsão",
-    "⚖️ Hiato salarial",
-    "🧭 Perfis de município",
-    "🔎 Sobre os dados",
+# ===================================================================== abas
+# UMA ABA POR PERGUNTA DE PESQUISA
+# -------------------------------
+# A organização anterior seguia a ORIGEM do dado — uma aba de CAGED, uma de
+# RAIS, uma de modelos. Isso espelha como o dado foi produzido, não o que ele
+# responde, e o resultado era um mural de gráficos verdadeiros que não chegava
+# a uma conclusão. Aqui cada aba é uma pergunta do TCC, e abre com a resposta.
+#
+# O mesmo conteúdo continua todo aqui: o Streamlit permite reentrar num
+# `with aba:`, então blocos escritos em pontos distantes do arquivo se somam na
+# aba certa, na ordem em que aparecem. Nada foi removido, só reagrupado.
+(aba_pesquisa, aba_q1, aba_q2, aba_q3, aba_q4, aba_q5, aba_metodo) = st.tabs([
+    "🧭 A pesquisa",
+    "1. Quanto cresceu?",
+    "2. Onde está o trabalho?",
+    "3. Melhorou a qualidade?",
+    "4. Quem ganha menos?",
+    "5. Para onde vai?",
+    "🔎 Método e dados",
 ])
 
-# ======================================================= 1. A TRAJETÓRIA
-with aba_hist:
+PERGUNTA_CENTRAL = (
+    "O crescimento do emprego formal em tecnologia no Brasil entre 2007 e 2026 "
+    "veio acompanhado de melhores salários e de mais equidade?")
+
+PERGUNTAS = [
+    ("1. Quanto o mercado cresceu, e em que ritmo?",
+     "Cresceu muito, com o salto concentrado em 2021–22 — e o ritmo agora desacelera."),
+    ("2. Onde está o trabalho de TI: em que empresas e em que lugares?",
+     "A maior parte dos profissionais de TI está fora das empresas de TI, "
+     "e o interior cresce mais rápido que as capitais."),
+    ("3. O emprego de TI melhorou em qualidade?",
+     "Não em remuneração relativa: o salário medido em salários mínimos está "
+     "praticamente parado, e o risco de desligamento se concentra no primeiro ano."),
+    ("4. Quem ganha menos, e por quê?",
+     "Mulheres e pessoas negras. A diferença por gênero é de retorno — mesma "
+     "qualificação, salário menor; a diferença por raça é sobretudo de acesso."),
+    ("5. Para onde o mercado vai?",
+     "Para crescimento modesto e positivo, com intervalo declarado: o modelo "
+     "supera a regra ingênua, mas erra mais em momentos de virada."),
+]
+
+
+def _pergunta(indice: int):
+    """O cabeçalho de uma aba-pergunta: a pergunta e, em destaque, a resposta."""
+    pergunta, resposta = PERGUNTAS[indice]
+    st.caption(pergunta.upper())
+    st.markdown(f'<p class="lead">{resposta}</p>', unsafe_allow_html=True)
+
+
+# ========================================================== 0. A PESQUISA
+with aba_pesquisa:
+    st.markdown(f'<p class="lead"><strong>Pergunta central.</strong> '
+                f'{PERGUNTA_CENTRAL}</p>', unsafe_allow_html=True)
+    st.markdown("\n".join(
+        f"**{p}** {r}" + "  " for p, r in PERGUNTAS))
+    st.caption("Cada pergunta é uma aba acima, com a evidência que a sustenta. "
+               "Abaixo, o argumento completo, da pergunta à conclusão.")
+    aba_historia.render()
+
+# ==================================== Q1 · quanto cresceu — fluxo do CAGED
+with aba_q1:
+    _pergunta(0)
+
     if not tem_hist or anual is None or anual.empty:
         st.info("A série histórica depende do arquivo unificado (`caged_ti.parquet`).")
     else:
@@ -199,8 +244,10 @@ with aba_hist:
                     "que um ano ruim não significa colapso de contratações: significa "
                     "que os desligamentos alcançaram as admissões.")
 
-# ============================================= 2. ONDE O TRABALHO ACONTECE
-with aba_onde:
+# ============================== Q2 · onde está o trabalho — as duas lentes
+with aba_q2:
+    _pergunta(1)
+
     st.subheader("Setor de TI ou ocupação de TI?")
     st.markdown(
         '<p class="lead">O recorte deste estudo une duas definições que descrevem '
@@ -255,8 +302,10 @@ with aba_onde:
                     "empresa de tecnologia. Uma análise que olhasse só o CNAE de TI "
                     "não veria esse contingente.")
 
-# ================================================== 3. QUEM É CONTRATADO
-with aba_quem:
+# ===================== Q4 · quem ganha menos — perfil de quem é contratado
+with aba_q4:
+    _pergunta(3)
+
     if not tem_hist:
         st.info("Requer o arquivo unificado.")
     else:
@@ -327,8 +376,10 @@ with aba_quem:
                          .rename(columns={"escolaridade": "Escolaridade"}),
                          width="stretch", hide_index=True)
 
-# ================================================ 4. SETORES E REGIÕES
-with aba_setor:
+# =========================== Q2 · onde está o trabalho — setores e regiões
+with aba_q2:
+    st.divider()
+
     if not tem_hist:
         st.info("Requer o arquivo unificado.")
     else:
@@ -383,40 +434,56 @@ with aba_setor:
                       "<br>Salário médio: R$ %{customdata[1]:,.2f}<extra></extra>")
             st.plotly_chart(f, width="stretch")
 
-# ================================================ 5. ESTOQUE (RAIS)
-with aba_estoque:
+# =================================== Q1 · quanto cresceu — estoque da RAIS
+with aba_q1:
+    st.divider()
+
     abas_rais.estoque(anual_rais, arco_rais)
 
-# =========================================== 6. REMUNERAÇÃO (RAIS)
-with aba_remun:
+# ================================= Q3 · qualidade do emprego — remuneração
+with aba_q3:
+    _pergunta(2)
+
     abas_rais.remuneracao(anual_rais, arco_rais, anos_rais)
 
-# =============================================== 7. EMPRESAS (RAIS)
-with aba_empresas:
+# ==================================== Q2 · onde está o trabalho — empresas
+with aba_q2:
+    st.divider()
+
     abas_rais.empresas(anos_rais)
 
-# ================================================== 8. MAPA DO BRASIL
-with aba_mapa_ti:
+# ============================== Q2 · onde está o trabalho — mapa do Brasil
+with aba_q2:
+    st.divider()
+
     aba_mapa.render()
 
-# ============================================ 9. PREVISÃO E NOWCAST
-with aba_prev:
-    abas_modelos.previsao()
-    st.divider()
-    abas_modelos.nowcast()
+# ==================== Q3 · qualidade do emprego — sobrevivência no vínculo
+with aba_q3:
     st.divider()
     abas_modelos.sobrevivencia()
 
-# ==================================================== 10. HIATO SALARIAL
-with aba_hiato:
+# ================================= Q5 · para onde vai — previsão e nowcast
+with aba_q5:
+    _pergunta(4)
+    abas_modelos.previsao()
+    st.divider()
+    abas_modelos.nowcast()
+
+# =========================== Q4 · quem ganha menos — decomposição do hiato
+with aba_q4:
+    st.divider()
+
     abas_modelos.hiato()
 
-# ============================================ 11. PERFIS DE MUNICÍPIO
-with aba_grupos:
+# ========================= Q2 · onde está o trabalho — perfis de município
+with aba_q2:
+    st.divider()
+
     abas_modelos.clusters()
 
-# =================================================== 12. SOBRE OS DADOS
-with aba_dados:
+# ========================================================== método e dados
+with aba_metodo:
     st.subheader("Como estes números foram construídos")
     st.markdown(f"""
 **Fonte.** Microdados do CAGED (Ministério do Trabalho e Emprego), obtidos do

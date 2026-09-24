@@ -56,6 +56,7 @@ import pandas as pd
 
 from extracao_ftp.config_extracao import BUCKET_SILVER_TI, conectar_duckdb
 from gold_caged import escopo_tecnologia as esc
+from gold_unificado.dicionario_canonico import sql_canonico
 
 warnings.simplefilter("ignore")
 
@@ -83,8 +84,8 @@ def _sql(ano: int, amostra: int | None) -> str:
                 WHEN motivo_desligamento IN ({censura}) THEN 0
                 ELSE 1
             END AS evento,
-            sexo_trabalhador_descricao        AS sexo,
-            raca_cor_descricao                AS raca,
+            {sql_canonico("sexo", "sexo_trabalhador_descricao")} AS sexo,
+            {sql_canonico("raca_cor", "raca_cor_descricao")} AS raca,
             escolaridade_apos_2005_descricao  AS escolaridade,
             tamanho_estabelecimento_descricao AS porte,
             idade,

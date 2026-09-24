@@ -59,6 +59,7 @@ CBO_FAMILIAS_TI = {
     "1236": "Direção de serviços de informática",
     "1425": "Gerência de TI",
     "2031": "Pesquisa em computação",
+    "2112": "Estatística e ciência de dados",
     "2122": "Engenharia em computação",
     "2123": "Administração de TI (BD, redes, SO)",
     "2124": "Análise de sistemas e desenvolvimento",
@@ -73,6 +74,36 @@ CBO_AVULSOS_TI = {
     "313305": "Técnico de comunicação de dados",
     "142135": "Encarregado de proteção de dados (DPO)",
 }
+
+# Códigos que a seleção por FAMÍLIA trazia e que não são de tecnologia.
+#
+# A família é boa regra porque captura códigos que o MTE cria com o tempo — mas
+# duas famílias misturam TI com outra coisa. A 2031 é "pesquisa em ciências
+# naturais e exatas": dela só a computação (2031-05) é TI; física, química,
+# matemática e ciências da terra entravam de carona. A 3171 inclui o
+# programador de máquina CNC (3171-15), que é chão de fábrica. Somavam 1.921
+# admissões/ano no CAGED 2025, com 1 a 6% delas em empresa de TI.
+#
+# A exclusão vale só para a LENTE DE OCUPAÇÃO: quem exerce essas ocupações
+# dentro de uma empresa de TI continua no recorte pela lente de setor.
+CBO_EXCLUIDOS = {
+    "203110": "Pesquisador em ciências da terra e meio ambiente",
+    "203115": "Pesquisador em física",
+    "203120": "Pesquisador em matemática",
+    "203125": "Pesquisador em química",
+    "317115": "Programador de máquinas-ferramenta com comando numérico (CNC)",
+}
+
+# Famílias que entraram DEPOIS da primeira construção da silver de TI.
+#
+# A 2112 (estatísticos) é onde analistas e cientistas de dados são registrados
+# — 2.324 admissões/ano no CAGED 2025, 72% delas FORA de empresa de TI, com
+# salário mediano de R$ 7.500. A inclusão foi decidida com o orientador.
+#
+# Guardar a lista separada é o que permite acrescentar só o que falta à silver
+# já construída, em vez de reprocessar a série inteira: ver
+# `auditoria.ajustar_recorte`.
+CBO_FAMILIAS_ACRESCENTADAS = {"2112"}
 
 
 # As colunas de CNAE e CBO mudam de nome entre as gerações do CAGED e na
@@ -142,6 +173,7 @@ AREAS_TI = {
     "Suporte e Operação": ["3172"],               # helpdesk, operação
     "Infraestrutura e Dados": ["2123"],           # banco de dados, redes, SO
     "Engenharia e Pesquisa": ["2122", "2031"],    # engenharia de computação + pesquisa
+    "Estatística e Ciência de Dados": ["2112"],   # estatísticos, analistas e cientistas de dados
     "Gestão e Direção": ["1425", "1236"],         # gerência e direção de TI
 }
 
@@ -170,8 +202,9 @@ def sql_area_ti(coluna: str = "cbo2002ocupacao") -> str:
     tamanho variável e às vezes com hífen, e sem o lpad os quatro primeiros
     dígitos não seriam a família.
     """
-    codigo = f"lpad(regexp_replace(trim({coluna}), '[^0-9]', '', 'g'), 6, '0')"
+    codigo = sql_codigo_cbo(coluna)
     familia = f"substr({codigo}, 1, 4)"
+    excluidos = ", ".join(f"'{c}'" for c in CBO_EXCLUIDOS)
 
     casos = "\n".join(
         f"            WHEN {familia} = '{fam}' THEN '{area}'"
@@ -182,7 +215,10 @@ def sql_area_ti(coluna: str = "cbo2002ocupacao") -> str:
         for cod, area in AREA_DOS_AVULSOS.items()
     )
 
+    # Excluído vem PRIMEIRO: sem isso o pesquisador de física cairia na área
+    # "Engenharia e Pesquisa" pela família 2031 antes de chegar ao ELSE.
     return f"""CASE
+            WHEN {codigo} IN ({excluidos}) THEN '{AREA_NAO_TI}'
 {casos_avulsos}
 {casos}
             ELSE '{AREA_NAO_TI}'
@@ -195,17 +231,58 @@ def sql_filtro_cnae(coluna: str = "subclasse") -> str:
     return f"{coluna} IN ({lista})"
 
 
+def sql_codigo_cbo(coluna: str = "cbo2002ocupacao") -> str:
+    """
+    O CBO normalizado em 6 dígitos: sem hífen, sem espaço, com zero à esquerda.
+
+    Uma regra só para o filtro e para a classificação por área. Antes cada um
+    normalizava de um jeito — a área removia hífen, o filtro não —, e um código
+    gravado como "3132-20" passava pela área e escapava do filtro.
+    """
+    return f"lpad(regexp_replace(trim({coluna}), '[^0-9]', '', 'g'), 6, '0')"
+
+
 def sql_filtro_cbo(coluna: str = "cbo2002ocupacao") -> str:
     """
     Predicado SQL dos profissionais de TI.
 
-    Compara os 4 primeiros dígitos com a família; o CBO no CAGED vem com 6
-    dígitos, e alguns registros trazem zero à esquerda, daí o lpad.
+    Compara os 4 primeiros dígitos com a família, soma os códigos avulsos e
+    tira os excluídos. O zero à esquerda importa: "21110" é o sargento da
+    Polícia Militar (021110), não a família 2111 dos matemáticos.
     """
     familias = ", ".join(f"'{f}'" for f in CBO_FAMILIAS_TI)
     avulsos = ", ".join(f"'{c}'" for c in CBO_AVULSOS_TI)
-    codigo = f"lpad(trim({coluna}), 6, '0')"
-    return f"(substr({codigo}, 1, 4) IN ({familias}) OR {codigo} IN ({avulsos}))"
+    excluidos = ", ".join(f"'{c}'" for c in CBO_EXCLUIDOS)
+    codigo = sql_codigo_cbo(coluna)
+    return (f"((substr({codigo}, 1, 4) IN ({familias}) OR {codigo} IN ({avulsos})) "
+            f"AND {codigo} NOT IN ({excluidos}))")
+
+
+def sql_complemento_cbo(col_cnae: str | None, col_cbo: str) -> str:
+    """
+    As linhas que ENTRAM no recorte com as famílias acrescentadas.
+
+    São as da família nova que ainda não estavam lá: as que já trabalham em
+    empresa de TI entraram desde o começo pela lente de setor, e trazê-las de
+    novo as duplicaria.
+    """
+    codigo = sql_codigo_cbo(col_cbo)
+    novas = ", ".join(f"'{f}'" for f in CBO_FAMILIAS_ACRESCENTADAS)
+    fora_do_setor = f"NOT coalesce({sql_filtro_cnae(col_cnae)}, false)" if col_cnae else "true"
+    return f"(substr({codigo}, 1, 4) IN ({novas}) AND {fora_do_setor})"
+
+
+def sql_saida_cbo(col_cnae: str | None, col_cbo: str) -> str:
+    """
+    As linhas que SAEM do recorte com os códigos excluídos.
+
+    Só as que estavam lá exclusivamente pela ocupação: dentro de empresa de TI,
+    a lente de setor as mantém.
+    """
+    codigo = sql_codigo_cbo(col_cbo)
+    excluidos = ", ".join(f"'{c}'" for c in CBO_EXCLUIDOS)
+    fora_do_setor = f"NOT coalesce({sql_filtro_cnae(col_cnae)}, false)" if col_cnae else "true"
+    return f"({codigo} IN ({excluidos}) AND {fora_do_setor})"
 
 
 def sql_classificacao(col_cnae: str = "subclasse",

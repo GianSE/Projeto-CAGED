@@ -552,7 +552,8 @@ def api_publicar_iniciar():
 
     resultado = processos.iniciar_publicacao(
         tabelas, repo, camada=camada,
-        recorte=corpo.get("recorte", "completo"))
+        recorte=corpo.get("recorte", "completo"),
+        limpar=bool(corpo.get("limpar")))
     if resultado["ok"]:
         resultado["tabelas"] = tabelas
         resultado["repo"] = repo

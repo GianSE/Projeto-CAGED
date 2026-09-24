@@ -16,6 +16,11 @@ bkp_temporario
 # git (o maior passa de 100 MB, limite rigido do GitHub por arquivo).
 publicacao/detalhado/
 
+# Espelhos locais do que vai para o Hugging Face: o dado mora no MinIO e no Hub,
+# nao no git. O README.md de cada espelho continua versionado — ele e o card
+# publicado junto com o dataset.
+publicacao/**/*.parquet
+
 # Os agregados sao pequenos (~100 KB) e VAO versionados de proposito: sao o
 # fallback do dashboard quando nao ha acesso aos dados detalhados.
 !dados_publicados/

@@ -59,6 +59,7 @@ import pandas as pd
 
 from extracao_ftp.config_extracao import BUCKET_SILVER_TI, conectar_duckdb
 from gold_caged import escopo_tecnologia as esc
+from gold_unificado.dicionario_canonico import sql_canonico
 
 warnings.simplefilter("ignore")
 
@@ -78,8 +79,8 @@ def _sql(ano: int) -> str:
     return f"""
         SELECT
             vl_remun_media_sm                 AS remuneracao_sm,
-            sexo_trabalhador_descricao        AS sexo,
-            raca_cor_descricao                AS raca,
+            {sql_canonico("sexo", "sexo_trabalhador_descricao")} AS sexo,
+            {sql_canonico("raca_cor", "raca_cor_descricao")} AS raca,
             escolaridade_apos_2005_descricao  AS escolaridade,
             tamanho_estabelecimento_descricao AS porte,
             tempo_emprego,
@@ -238,9 +239,9 @@ def serie(anos: range, con=None) -> pd.DataFrame:
         except Exception as e:
             print(f"   ⚠️  {ano}: {str(e)[:70]}")
             continue
-        for dimensao, a, b in (("sexo", "MASCULINO", "FEMININO"),
-                               ("raca", "BRANCA", "PARDA"),
-                               ("raca", "BRANCA", "PRETA")):
+        for dimensao, a, b in (("sexo", "Homem", "Mulher"),
+                               ("raca", "Branca", "Parda"),
+                               ("raca", "Branca", "Preta")):
             r = decompor(df, dimensao, a, b)
             if not r:
                 continue
@@ -318,12 +319,12 @@ def main() -> int:
 
     pares = []
     if args.dimensao in ("sexo", "ambos"):
-        pares.append(("sexo", "MASCULINO", "FEMININO"))
+        pares.append(("sexo", "Homem", "Mulher"))
     if args.dimensao in ("raca", "ambos"):
         # Branca contra parda/preta, os dois maiores grupos não brancos.
-        for outro in ("PARDA", "PRETA"):
+        for outro in ("Parda", "Preta"):
             if (df["raca"] == outro).sum() >= 500:
-                pares.append(("raca", "BRANCA", outro))
+                pares.append(("raca", "Branca", outro))
 
     for dimensao, a, b in pares:
         print(f"\n{'-' * 78}")

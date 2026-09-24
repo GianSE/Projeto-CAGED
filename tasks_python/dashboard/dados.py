@@ -30,6 +30,7 @@ from extracao_ftp.config_extracao import (
     MINIO_REGION,
     MINIO_SECRET_KEY,
 )
+from gold_unificado.dicionario_canonico import sql_canonico
 
 # Origem dos dados detalhados, resolvida por ambiente:
 #   DADOS_URL_BASE definido  -> parquet consolidado servido por HTTPS
@@ -67,15 +68,19 @@ FONTE_UNIF = _caminho("caged_ti")
 # empilhá-las produziria uma série falsa.
 FONTE_UNIFICADA = f"""
     SELECT competenciamov_data AS competencia, uf_descricao, municipio_descricao,
-           cbo2002ocupacao_descricao, sexo_descricao, racacor_descricao,
-           graudeinstrucao_descricao AS escolaridade_descricao,
+           cbo2002ocupacao_descricao,
+           {sql_canonico("sexo", "sexo_descricao")} AS sexo_descricao,
+           {sql_canonico("raca_cor", "racacor_descricao")} AS racacor_descricao,
+           {sql_canonico("escolaridade", "graudeinstrucao_descricao")} AS escolaridade_descricao,
            saldomovimentacao AS saldo_mov, salario AS salario_valor, idade,
            ano_particao, 'Novo CAGED' AS geracao
     FROM read_parquet('{_caminho("caged_mov")}')
     UNION ALL
     SELECT competencia_declarada_data, uf_descricao, municipio_descricao,
-           cbo_2002_ocupacao_descricao, sexo_descricao, raca_cor_descricao,
-           grau_instrucao_descricao,
+           cbo_2002_ocupacao_descricao,
+           {sql_canonico("sexo", "sexo_descricao")},
+           {sql_canonico("raca_cor", "raca_cor_descricao")},
+           {sql_canonico("escolaridade", "grau_instrucao_descricao")},
            saldo_mov, salario_mensal, idade,
            ano_particao, 'CAGED antigo'
     FROM read_parquet('{_caminho("caged_old")}')
@@ -223,9 +228,9 @@ def _sql(nome: str) -> str:
             GROUP BY 1, 2 HAVING count(*) >= 50 ORDER BY 1
         """,
         "demografia": f"""
-            SELECT ano_particao AS ano, sexo_descricao AS sexo,
-                   racacor_descricao AS raca_cor,
-                   graudeinstrucao_descricao AS escolaridade, {METRICAS}
+            SELECT ano_particao AS ano, {sql_canonico("sexo", "sexo_descricao")} AS sexo,
+                   {sql_canonico("raca_cor", "racacor_descricao")} AS raca_cor,
+                   {sql_canonico("escolaridade", "graudeinstrucao_descricao")} AS escolaridade, {METRICAS}
             FROM read_parquet('{FONTE}') GROUP BY 1, 2, 3, 4 ORDER BY 1
         """,
         "lentes": _sql_lentes(),

@@ -547,6 +547,41 @@ def _cobertura_anual(pasta: Path) -> tuple[str, list[str]]:
     return periodo, faltando
 
 
+def limpar_remoto(api, repo: str, local: Path, tabelas: list[str]) -> int:
+    """
+    Apaga no repositório os arquivos que não existem mais no espelho.
+
+    O envio só ACRESCENTA. Quando um arquivo é renomeado — e o agrupamento por
+    partição renomeou dois mil deles — a versão antiga continua publicada, e
+    quem consulta a pasta com `read_parquet('.../tabela/**/*.parquet')` soma as
+    duas: as linhas aparecem em dobro, sem erro nenhum.
+
+    A remoção é restrita às PASTAS DAS TABELAS publicadas nesta execução, para
+    não encostar no card, nos dicionários nem nos arquivos consolidados da raiz.
+    Vai num commit só: são centenas de caminhos, e um commit por arquivo levaria
+    a API a estrangular a conexão.
+    """
+    from huggingface_hub import CommitOperationDelete
+
+    locais = {f.relative_to(local).as_posix() for f in local.rglob("*") if f.is_file()}
+    prefixos = tuple(f"{t}/" for t in tabelas)
+    remotos = [f for f in api.list_repo_files(repo, repo_type="dataset")
+               if f.startswith(prefixos)]
+    sobrando = sorted(set(remotos) - locais)
+    if not sobrando:
+        print("   ✅ nada a remover: o repositorio ja espelha a camada")
+        return 0
+
+    print(f"   🗑️  removendo {len(sobrando)} arquivo(s) que nao existem "
+          f"mais (ex.: {sobrando[0]})")
+    api.create_commit(
+        repo_id=repo, repo_type="dataset",
+        operations=[CommitOperationDelete(path_in_repo=f) for f in sobrando],
+        commit_message="Remove arquivos substituidos pelo agrupamento por particao",
+    )
+    return len(sobrando)
+
+
 def _credencial() -> str | None:
     from dotenv import load_dotenv
 
@@ -574,6 +609,9 @@ def main() -> int:
     p.add_argument("--privado", action="store_true")
     p.add_argument("--so-espelhar", action="store_true", help="Só baixa do MinIO, não envia")
     p.add_argument("--so-subir", action="store_true", help="Só envia o que já está no espelho")
+    p.add_argument("--limpar", action="store_true",
+                   help="Depois de enviar, apaga no repositório o que não está mais "
+                        "no espelho (necessário quando arquivos foram renomeados)")
     p.add_argument("--so-card", action="store_true",
                    help="Regera e envia apenas o README do dataset, sem tocar nos parquets")
     args = p.parse_args()
@@ -674,6 +712,11 @@ def main() -> int:
         repo_type="dataset",
         print_report=True,
     )
+
+    # Remover DEPOIS de enviar: nesta ordem o dataset fica um instante com as
+    # duas versões; na ordem inversa ficaria um instante sem dado nenhum.
+    if args.limpar:
+        limpar_remoto(api, args.repo, DIR_LOCAL, tabelas_validas)
 
     print(f"\n🏁 Publicado: https://huggingface.co/datasets/{args.repo}")
     return 0

@@ -218,7 +218,7 @@ def iniciar_silver(tabelas: list[str], camada: str = "caged", forcar: bool = Fal
 
 
 def iniciar_publicacao(tabelas: list[str], repo: str, camada: str = "caged",
-                       recorte: str = "completo") -> dict:
+                       recorte: str = "completo", limpar: bool = False) -> dict:
     """
     Sobe o subprocesso de publicação no Hugging Face (silver -> Hub).
 
@@ -232,6 +232,10 @@ def iniciar_publicacao(tabelas: list[str], repo: str, camada: str = "caged",
     comando = [PYTHON_JOBS, "-m", "silver_caged.publicar_hf",
                "--camada", camada, "--recorte", recorte,
                "--repo", repo, "--tabela", *tabelas]
+    # Sem isto, arquivo renomeado na camada fica publicado nas DUAS versões, e
+    # quem lê a pasta com glob conta as linhas em dobro.
+    if limpar:
+        comando.append("--limpar")
     return _lancar(comando, f"hf-{'-'.join(tabelas)}"[:60], f"publicação → {repo}")
 
 
@@ -284,6 +288,16 @@ JOBS_MANUTENCAO = {
               "repõe a silver a partir do que já está publicado"),
     "reparticionar": ("auditoria.reparticionar",
                       "uniformiza a profundidade das partições da tabela"),
+    "reconstruir": ("reconstruir_camadas",
+                    "reconstrói gold, mapa, modelos e consolidados a partir da silver"),
+    "recorte": ("auditoria.ajustar_recorte",
+                "aplica a revisão do recorte de TI (entra 2112, saem os excluídos)"),
+    "agrupar": ("auditoria.agrupar_arquivos",
+                "junta os arquivos pequenos de cada partição num arquivo só"),
+    "consolidar": ("gold_caged.consolidar",
+                   "junta cada tabela da silver num arquivo único para publicar"),
+    "unificar": ("gold_caged.unificar",
+                 "monta o caged_ti.parquet, as duas gerações do CAGED numa série"),
     "podar": ("auditoria.podar_colunas",
               "remove colunas 100% nulas geradas por mapeamento errado"),
 }

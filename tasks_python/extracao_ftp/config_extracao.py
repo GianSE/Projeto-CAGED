@@ -64,6 +64,12 @@ def conectar_duckdb():
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
 
+    # A barra de progresso é feita para terminal: reescreve a mesma linha com
+    # caracteres de controle. Num log de arquivo — que é como o painel mostra o
+    # andamento — ela vira milhares de linhas de blocos que soterram as mensagens
+    # do job.
+    con.execute("SET enable_progress_bar = false;")
+
     # CREATE SECRET é DDL e não aceita parâmetros vinculados (?), então os valores
     # entram interpolados — com aspas simples escapadas para não quebrar o SQL.
     def esc(v: str) -> str:
