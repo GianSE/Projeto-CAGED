@@ -1,0 +1,72 @@
+% CAPÍTULO 5 — CONSIDERAÇÕES FINAIS
+
+\chapter{Considerações Finais}
+\label{cap:consideracoes}
+
+Este trabalho se propôs a responder se é possível construir uma plataforma analítica reprodutível sobre os microdados da RAIS e do CAGED, com baixo custo operacional, e o que esses dados dizem sobre o mercado formal de tecnologia no Brasil. As duas faces da pergunta foram respondidas, e a resposta à segunda depende da primeira: foi a construção cuidadosa da camada de dados que permitiu enxergar coisas que agregados publicados não mostram.
+
+\section{Contribuições}
+
+A \textbf{contribuição técnica} é um \textit{pipeline} completo, do servidor público ao \textit{dashboard}, que trata 56,3~GB de microdados heterogêneos em uma infraestrutura modesta e entrega consulta interativa sobre a série inteira. Três decisões sustentam esse resultado: o formato colunar particionado, que permite descartar dados sem lê-los; o motor analítico \textit{in-process}, que dispensa servidor e importação prévia; e a consolidação de arquivos por partição, que reduziu 2.111 objetos a 628 e levou a contagem completa de 23,3 milhões de vínculos a 0,4~segundo.
+
+A \textbf{contribuição metodológica} está na forma de delimitar o setor. Em lugar de escolher entre definir tecnologia pela atividade da empresa ou pela ocupação do trabalhador, o trabalho preserva as duas lentes como rótulos independentes em cada registro. Essa escolha é o que torna possível o achado central: a maior parte dos profissionais de TI está fora das empresas de TI, e existe um contingente expressivo de pessoas em empresas de TI exercendo outras ocupações, com remuneração muito inferior. Nenhum recorte de lente única enxerga os dois grupos.
+
+A \textbf{contribuição analítica} são as respostas às cinco perguntas, sintetizadas no \autoref{quadro:sintese}. Duas merecem destaque pelo que contrariam. A primeira é que crescer não melhorou a remuneração relativa: o emprego mais que dobrou e a mediana em salários mínimos ficou onde estava. A segunda é a distinção estrutural entre os eixos de desigualdade --- o hiato de gênero é inteiramente de retorno, com parcela explicada negativa, enquanto o racial é majoritariamente de acesso ---, distinção que implica instrumentos de política diferentes.
+
+Há ainda uma \textbf{contribuição sobre a qualidade da fonte}, que não estava prevista. A auditoria encontrou defeitos concretos nos dados publicados pelo MTE e um erro de método próprio, relatados na \autoref{sec:achados-qualidade}. Nenhum deles produz mensagem de erro, e todos produzem resposta errada --- o que os torna especialmente úteis de documentar.
+
+\section{Limitações}
+
+As limitações de fonte foram declaradas na \autoref{sec:limitacoes-metodo} e merecem ser retomadas. A RAIS e o CAGED cobrem apenas o mercado formal, o que exclui a contratação como pessoa jurídica, comum no setor. A localização é a do estabelecimento declarante, e não a do trabalho --- distorção que o trabalho remoto agrava e que o dado público não permite corrigir. A CBO é atualizada lentamente, e o próprio trabalho encontrou código em uso que nenhum dicionário oficial documenta.
+
+Três limitações de método também precisam ficar registradas. A primeira é que a parcela não explicada da decomposição salarial não mede discriminação: ela é um limite superior para o que a discriminação poderia explicar. A segunda é que a tábua de vida de período descreve o risco vigente em um ano, e não a trajetória de uma coorte --- a leitura de permanência precisa dessa ressalva. A terceira é que o Prophet, previsto na proposta, não foi avaliado: a família SARIMA foi adotada e validada, mas a comparação entre as duas abordagens ficou de fora.
+
+\section{Estado Atual do Trabalho e Pendências}
+\label{sec:pendencias}
+
+\begin{quadro}[htbp]
+    \centering
+    \caption{Pendências para a versão final}
+    \label{quadro:pendencias}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{%
+        >{\raggedright\arraybackslash\hsize=0.62\hsize}X
+        >{\raggedright\arraybackslash\hsize=1.38\hsize}X}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Pendência} & \textbf{Situação} \\
+        \midrule
+        Reprocessar os modelos após a correção de 2022 &
+        A correção da ingestão parcial de 2022 (\autoref{sec:achados-qualidade}) foi aplicada à camada tratada, e os agregados da RAIS e do mapa foram reconstruídos sobre ela. Os modelos, porém, ainda são da rodada anterior. Afetados: o \textit{nowcast}, que usa a série de estoque no ajuste dos estimadores, e a linha de 2022 da série do hiato. \textbf{Não} afetados: a previsão do saldo mensal (construída sobre o CAGED), a análise de sobrevivência (calculada sobre 2024) e os perfis de município (janela de 2020 a 2025). Os valores reportados nas tabelas de \textit{nowcast} devem, portanto, ser lidos como provisórios. \\
+        Concluir a cadeia de reconstrução &
+        As duas últimas etapas --- consolidação das tabelas em arquivo único e unificação das duas gerações do CAGED --- não foram executadas nesta rodada, porque a cadeia parou na etapa de modelos. Os arquivos consolidados ainda refletem a camada anterior à correção. \\
+        Republicar os dados abertos &
+        A partição de 2022 da RAIS e os agregados reconstruídos ainda não foram republicados no repositório público, e o \textit{dashboard} implantado em nuvem segue consumindo a versão anterior. \\
+        Obstáculo técnico: política de integridade de código &
+        O \textit{Smart App Control} do Windows passou a bloquear as bibliotecas nativas de \textit{scipy}, \textit{statsmodels} e \textit{scikit-learn} carregadas pelo Python, o que impede recalcular os modelos na máquina de desenvolvimento. As duas saídas são desligar a política --- operação irreversível, que exige reinstalação do sistema para ser revertida --- ou executar essas etapas em contêiner Linux, onde a política não se aplica. \\
+        Espaço em disco &
+        O \textit{data lake} local ocupa 72~GB em um disco com 27~GB livres. A camada Bronze (56~GB) é reponível a partir do repositório público, e o projeto tem rotina para isso, de modo que a liberação de espaço não implica perda de dado. \\
+        Verificação de reprodutibilidade da RAIS &
+        O teste de recontagem a partir do dado bruto (\autoref{sec:reprodutibilidade}) foi feito para o CAGED. O equivalente para a RAIS ainda não foi executado. \\
+        Confronto com os painéis oficiais &
+        A comparação dos agregados com os painéis do PDET, prevista na proposta, foi feita de forma pontual e precisa ser sistematizada por unidade federativa e ano. \\
+        Registro visual da interface &
+        O capítulo de resultados descreve o \textit{dashboard} e o mapa, mas não traz capturas de tela. A versão final deve incluí-las. \\
+        \bottomrule
+    \end{tabularx}
+    \\[4pt]
+    Fonte: Autoria própria.
+\end{quadro}
+
+\section{Trabalhos Futuros}
+
+Três extensões decorrem diretamente do que foi construído.
+
+A primeira é medir \textbf{retenção por gênero} cruzando as duas bases: o CAGED informa quem entra, a RAIS informa quem permanece. A comparação entre a composição das admissões e a do estoque permitiria distinguir um problema de entrada de um problema de permanência --- pergunta que nenhuma das duas bases responde isolada.
+
+A segunda é a \textbf{decomposição regional} do crescimento, no estilo \textit{shift-share}, separando quanto do crescimento de cada estado se explica pela composição setorial e quanto por dinamismo próprio. O dado já está na camada; falta o método.
+
+A terceira é de engenharia: documentar a linhagem do \textit{pipeline} de forma navegável. A procedência já existe no dado, linha a linha, mas não há hoje uma visão de conjunto das dependências entre as tabelas da camada Gold. Ferramentas de transformação declarativa geram esse grafo automaticamente, e a camada Gold --- composta de agregados em SQL --- é a parte do projeto que se beneficiaria dessa migração, sem necessidade de reescrever a ingestão ou a camada tratada.
+
+Por fim, a plataforma foi construída para ser reaproveitada. O desenho --- ingestão sem transformação, tradução por dicionários oficiais com procedência, recorte declarado e auditado, camada analítica em formato aberto e publicação dos dados tratados --- não tem nada de específico do mercado de tecnologia. Aplicá-lo a outro recorte ocupacional, ou a outra base governamental brasileira de grande volume, é questão de trocar a definição do recorte e os dicionários de tradução.

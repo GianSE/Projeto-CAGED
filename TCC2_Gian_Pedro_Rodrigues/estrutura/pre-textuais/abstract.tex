@@ -1,0 +1,13 @@
+% ABSTRACT--------------------------------------------------------------------------------
+
+\begin{resumo}[ABSTRACT]
+\begin{SingleSpacing}
+
+\imprimirautorcitacao. \imprimirtitleabstract. \imprimirdata. \pageref{LastPage} f. \imprimirprojeto\ -- \imprimirprograma, \imprimirinstituicao. \imprimirlocal, \imprimirdata.\\
+
+Formal employment in Information Technology (IT) in Brazil has grown rapidly over the past two decades, yet the available analyses of the sector typically rely on closed aggregates or short time windows, and cannot be reproduced. This work built a complete analytical platform over the microdata of the Annual Social Information Report (RAIS) and the General Register of Employed and Unemployed Workers (CAGED), covering 2007 to 2026, organized as a Medallion architecture (Bronze, Silver and Gold) on a MinIO data lake compatible with the Amazon Simple Storage Service (S3) interface, with Apache Parquet files queried by the in-process engine DuckDB and presented through a Streamlit dashboard. A total of 56.3~GB of raw microdata was ingested; the technology scope --- defined as the union of economic activity (CNAE) and occupation (CBO) --- yielded 23.3 million RAIS employment records and 12.2 million CAGED movements. Reproducibility was verified by counting the same month in the raw data from the public server and in the published layer, with zero difference. The results show that the stock of formal IT jobs rose from 560,040 in 2007 to 1,361,231 in 2025, a 143\% increase, while median pay measured in minimum wages remained practically flat (3.61 to 3.55); that 58\% of IT professionals work outside IT companies, with higher median pay (4.71 against 4.36 minimum wages); that the gender wage gap fell from 19.0\% to 7.8\% but remained entirely unexplained by observable characteristics; and that a nowcasting estimator for the employment stock, validated with the year 2025 held out of training, was off by 0.45\%. The SARIMA model selected through rolling-origin validation outperformed the seasonal naive baseline by 29\% in mean absolute error. The processed layers and the aggregates were published as open datasets, and the dashboard was deployed to the cloud consuming those published data.\\
+
+\textbf{Keywords}: IT labor market; data engineering; RAIS; CAGED; medallion architecture; DuckDB; open data; SARIMA.
+
+\end{SingleSpacing}
+\end{resumo}

@@ -1,0 +1,66 @@
+% FOLHA DE ROSTO
+
+\preambulo{Proposta de Trabalho de Conclusão de Curso apresentada como requisito parcial para obtenção do título de \imprimirtituloAcademico\ em Engenharia da Computação do \imprimirprograma\ da \imprimirinstituicao. Orientador(a): \imprimirorientador.}
+
+\makeatletter
+\renewcommand{\imprimirfolhaderosto}
+{%
+    \setcounter{page}{2}
+
+    \begin{center}
+        \large\bfseries\MakeUppercase{\imprimirautor}
+    \end{center}
+
+    \vspace*{80pt}
+
+    \begin{center}
+        \ABNTEXchapterfont\large\bfseries\MakeUppercase{\imprimirtitulo}
+    \end{center}
+
+    \vspace*{20pt}
+
+    \begin{center}
+        \ABNTEXchapterfont\large\bfseries\MakeUppercase{\imprimirtitleabstract}
+    \end{center}
+
+    \vspace*{40pt}
+
+    \abntex@ifnotempty{\imprimirpreambulo}
+    {%
+        \begin{flushright}
+            \begin{minipage}{.5\textwidth}
+                \SingleSpacing
+                \small\imprimirpreambulo
+            \end{minipage}
+        \end{flushright}
+    }
+
+    \vspace*{\fill}
+
+    \begin{center}
+        \begin{SingleSpacing}
+            \large\bfseries\MakeUppercase{\imprimirlocal}\\
+            \large\bfseries\MakeUppercase{\imprimirdata}
+        \end{SingleSpacing}
+    \end{center}
+
+    \vspace*{0.5cm}
+
+    \begin{table}[!h]
+        \begin{tabular}{cp{11cm}}
+            \includegraphics[width=3cm]{estrutura/pre-textuais/CreativeCommonsLogos/CC_BY_NC_ND.png}\\
+            {\tiny 4.0 Internacional}
+            &
+            \vspace{-1.8cm}{\tiny Esta licença permite download e compartilhamento
+            do trabalho desde que sejam atribuídos créditos ao autor, sem a
+            possibilidade de alterá-lo ou utilizá-lo para fins comerciais.
+            Conteúdos elaborados por terceiros, citados e referenciados nesta obra
+            não são cobertos pela licença.}
+        \end{tabular}
+    \end{table}
+}
+\makeatother
+
+\imprimirfolhaderosto
+\clearpage
+\restoregeometry

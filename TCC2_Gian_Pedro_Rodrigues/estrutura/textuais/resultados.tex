@@ -1,0 +1,223 @@
+% CAPÍTULO 4 — RESULTADOS E DISCUSSÃO
+
+\chapter{Resultados e Discussão}
+\label{cap:resultados}
+
+Este capítulo apresenta os resultados em três blocos. O primeiro trata da plataforma como artefato de engenharia: o que foi construído, quanto custa consultá-la e se o resultado é reproduzível. O segundo relata os achados de qualidade do dado --- defeitos encontrados na fonte e um erro de método cometido e corrigido durante o trabalho. O terceiro responde, uma a uma, às cinco perguntas de pesquisa da \autoref{quadro:perguntas}.
+
+Todas as tabelas numéricas deste capítulo são \textbf{geradas a partir da camada Gold} por um \textit{script} do repositório do projeto, e não digitadas. A decisão tem motivo: durante o trabalho, uma lista de códigos mantida à mão passou a divergir do recorte efetivamente aplicado, e o texto afirmou por algum tempo algo que o dado não dizia.
+
+\section{A Plataforma Construída}
+
+O \textit{pipeline} ingeriu os microdados da RAIS de 2007 a 2025 e do CAGED de 2007 a junho de 2026. A \autoref{tab:volumes} mostra o volume de cada camada e a \autoref{tab:linhas-camada}, o número de registros dentro do recorte de tecnologia em cada tabela tratada.
+
+\input{estrutura/tabelas-geradas/tab-volumes.tex}
+
+\input{estrutura/tabelas-geradas/tab-linhas-camada.tex}
+
+A redução de volume entre as camadas é informativa: os 56~GB de microdados brutos tornam-se pouco mais de 1~GB quando restritos ao recorte de tecnologia e convertidos para Parquet com compressão. É essa redução que torna viável consultar a série inteira em um computador pessoal.
+
+O número de arquivos importa tanto quanto o volume. A camada nasceu com 2.111 arquivos de menos de 2~MB --- um por arquivo de entrada ---, e foi consolidada em 628, um por partição, conforme descrito na \autoref{sec:arquitetura}. Depois da consolidação, uma contagem completa dos 23,3 milhões de vínculos de TI da RAIS responde em 0,4~segundo, lendo apenas os rodapés de metadados dos 19 arquivos da tabela. O ganho não vem de \textit{hardware}, e sim de pedir ao formato o que ele sabe responder sem ler dado.
+
+\section{Reprodutibilidade do Recorte}
+\label{sec:reprodutibilidade}
+
+A validação mais exigente da plataforma não é comparar agregados com painéis oficiais --- erros podem se cancelar em uma soma ---, e sim verificar se o recorte publicado pode ser \textbf{reconstruído a partir do dado bruto}. A consulta do \autoref{lst:reprodutibilidade}, no \autoref{apend:consultas}, aplica a definição do recorte ao microdado bruto de junho de 2025 e compara com a camada publicada:
+
+\begin{itemize}
+    \item no dado bruto do servidor público: 73.977 movimentações;
+    \item na camada tratada publicada: 73.977 movimentações;
+    \item diferença: zero.
+\end{itemize}
+
+A consulta é executável por terceiros sem acesso à infraestrutura do projeto, porque as duas pontas --- bronze e camada tratada --- estão publicadas. É esse o sentido operacional de reprodutibilidade adotado aqui: não ``o código está disponível'', mas ``a afirmação pode ser recontada da fonte''.
+
+\section{Achados de Qualidade do Dado}
+\label{sec:achados-qualidade}
+
+A auditoria descrita na \autoref{sec:auditoria} encontrou defeitos na fonte e um erro de método próprio. Documentá-los é contribuição do trabalho: são obstáculos que qualquer pesquisa sobre as mesmas bases encontrará, e nenhum deles produz mensagem de erro.
+
+O \autoref{quadro:achados} relaciona os achados. Dois merecem discussão mais longa pela natureza do problema.
+
+\begin{quadro}[htbp]
+    \centering
+    \caption{Defeitos de dado e de método encontrados durante a construção}
+    \label{quadro:achados}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{%
+        >{\raggedright\arraybackslash\hsize=0.70\hsize}X
+        >{\raggedright\arraybackslash\hsize=1.35\hsize}X
+        >{\raggedright\arraybackslash\hsize=0.95\hsize}X}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Achado} & \textbf{Descrição} & \textbf{Como foi detectado} \\
+        \midrule
+        Conversão de salário mínimo invertida & A partir de 2023, um conjunto de registros da RAIS traz a remuneração em salários mínimos com a operação invertida, produzindo valores implausíveis: 222 registros em 2023, 205 em 2024 e 94 em 2025, contra nenhum nos anos anteriores. & Dividir a remuneração nominal pelo salário mínimo do ano e comparar com o valor declarado. \\
+        Colunas não harmonizadas & A partir de 2023, arquivos do mesmo ano nomeiam o mesmo campo de formas diferentes, e o sufixo \textit{``\_codigo''} aparece em parte das colunas codificadas. & Comparação de esquema entre arquivos da mesma partição. \\
+        Remuneração como texto & Em 2023, sete arquivos trazem a remuneração como texto, e não como número. A verificação por ano não revelava: o esquema agregado do ano mostrava o tipo numérico. & Leitura do esquema \textbf{arquivo por arquivo}. \\
+        Código de ocupação não documentado & O código CBO 211220 aparece no microdado com milhares de vínculos ativos, mas não consta de nenhum dicionário oficial do MTE --- nem da RAIS, nem do CAGED. & Tradução sem correspondente no dicionário, com código presente no dado. \\
+        Domicílio fiscal no lugar do local de trabalho & A localização do vínculo é a do estabelecimento declarante. Municípios com incentivo fiscal aparecem com concentração acima da real. Não é corrigível com o dado público. & Concentração implausível em municípios específicos. \\
+        Ingestão parcial de arquivo & Sete pedaços de dois arquivos de 2022 não chegaram à camada tratada: 446.267 vínculos ausentes, um terço do ano. & Série anual implausível, e depois verificação pedaço a pedaço contra o bronze. \\
+        Erro de método: Kaplan-Meier em corte transversal & A primeira estimativa de permanência no emprego indicou mediana de 570 meses --- 48 anos. O estimador pressupõe coorte acompanhada no tempo; a RAIS é corte transversal. & Resultado implausível à inspeção. \\
+        \bottomrule
+    \end{tabularx}
+    \\[4pt]
+    Fonte: Autoria própria.
+\end{quadro}
+
+\subsection{Ingestão Parcial: o Limite de uma Auditoria por Arquivo}
+
+Arquivos grandes da RAIS são processados em pedaços, faixas de linhas alinhadas às bordas dos blocos do Parquet. Em 2022 --- ano em que o MTE passou a publicar a RAIS por região, com arquivos muito maiores --- sete desses pedaços não chegaram à camada tratada: três do arquivo da região Sul e quatro do de São Paulo. A causa foi uma interrupção de processo durante a regravação desses objetos, que ficaram com metadado de armazenamento truncado --- ilegíveis para leitura e recusados para escrita.
+
+O ponto metodológico está em por que a auditoria não detectou. A verificação de completude pergunta se \textbf{cada arquivo-fonte tem saída} na camada. Como outros pedaços dos mesmos dois arquivos chegaram, a resposta era afirmativa. O defeito só se tornou visível na série anual: o estoque de 2022 aparecia 14\% \textbf{abaixo} de 2021 e 27\% abaixo de 2023, e o hiato salarial de gênero daquele ano saltava para 29,6\%, contra 6,3\% no ano anterior. Nenhum mercado de trabalho se comporta assim; a implausibilidade da série foi o sintoma.
+
+A correção teve duas partes. A primeira foi reconstruir os pedaços a partir do bronze, o que devolveu os 446.267 vínculos --- cada pedaço reconstruído bateu exatamente com a contagem prevista. A segunda, mais importante, foi acrescentar à auditoria uma verificação de completude \textbf{por pedaço}, que recalcula a divisão esperada com a mesma função usada pelo construtor e confronta com a procedência registrada em cada linha da camada. A lição é generalizável: em \textit{pipelines} que processam arquivos grandes em partes, completude ao nível do arquivo é uma garantia mais fraca do que parece.
+
+\subsection{Erro de Método: Sobrevivência em Corte Transversal}
+
+A primeira tentativa de medir permanência no emprego aplicou o estimador de Kaplan-Meier ao corte transversal da RAIS e produziu mediana de 570 meses, 48 anos de emprego. O número é absurdo e, por isso, útil: ele expõe a incompatibilidade entre o estimador e a estrutura do dado, discutida na \autoref{subsec:sobrevivencia}. Um corte transversal sobre-representa vínculos longos --- quem fica vinte anos aparece em vinte edições da RAIS; quem fica três meses pode não aparecer em nenhuma.
+
+A substituição pela tábua de vida de período resolve o problema ao trocar a pergunta: em lugar de ``quanto dura um vínculo que começou em tal ano'', que o dado não permite responder, ela responde ``qual o risco de desligamento observado em cada faixa de tempo de casa neste ano''. O registro deste erro no texto é deliberado: a estimativa implausível foi detectada por inspeção, e não por um teste automatizado, o que indica onde a validação do trabalho é mais frágil.
+
+\section{Pergunta 1: Quanto o Mercado Cresceu}
+\label{sec:resultado-q1}
+
+A \autoref{tab:estoque-serie} apresenta a série anual do estoque de vínculos formais de tecnologia, com a remuneração mediana em salários mínimos e o tempo médio de emprego.
+
+\input{estrutura/tabelas-geradas/tab-estoque-serie.tex}
+
+O estoque passou de 560.040 vínculos em 2007 para 1.361.231 em 2025, crescimento de 143\% em dezoito anos --- mais que o dobro. O ritmo, porém, não é uniforme: o salto se concentra em 2021 e 2022, período da aceleração digital que seguiu a pandemia de COVID-19, e os anos seguintes mostram desaceleração clara.
+
+O fluxo mensal do CAGED confirma e detalha esse desenho. A série construída cobre 234 meses, de janeiro de 2007 a junho de 2026, com saldo acumulado de 694.776 vagas líquidas. A diferença entre esse acumulado e a variação do estoque da RAIS no mesmo período não é erro: as duas bases têm coberturas e prazos de declaração distintos, e essa diferença é justamente o que o estimador de \textit{nowcast} da \autoref{sec:resultado-q5} precisa modelar.
+
+\section{Pergunta 2: Onde Está o Trabalho de TI}
+\label{sec:resultado-q2}
+
+Esta é a pergunta cuja resposta mais se afasta do senso comum sobre o setor, e é o achado central do trabalho.
+
+\input{estrutura/tabelas-geradas/tab-lentes.tex}
+
+A \autoref{tab:lentes} cruza as duas lentes do recorte. Dos profissionais com ocupação de TI, \textbf{58\% trabalham fora de empresas de TI} --- em bancos, varejo, indústria, saúde e administração pública. E não estão em posição inferior: a remuneração mediana de quem está fora é de 4,71 salários mínimos, contra 4,36 de quem está dentro, com tempo de emprego de 59 meses contra 43.
+
+A comparação, no entanto, não é estável ao longo da série: em 2007 quem estava fora ganhava \textit{menos} (5,22 contra 5,74 salários mínimos), e a inversão ocorre ao longo do período. A leitura compatível com os dados é que a difusão da função de tecnologia para fora do setor de TI veio acompanhada de valorização relativa dessas posições, e não que ``fora paga mais'' como característica permanente do mercado.
+
+A terceira linha da tabela mostra o lado oposto da mesma moeda: há um contingente expressivo de pessoas em empresas de TI exercendo \textbf{outras} ocupações, com remuneração mediana de 2,18 salários mínimos --- menos da metade das demais. Esse grupo é invisível em qualquer recorte que defina TI apenas pelo setor da empresa, e sua inclusão explica por que a remuneração média do ``setor de TI'' costuma ser menor do que a dos profissionais de TI.
+
+\subsection{Composição por Área}
+
+\input{estrutura/tabelas-geradas/tab-areas.tex}
+
+A \autoref{tab:areas} desagrega o estoque pelas áreas de atuação. Desenvolvimento concentra a maior parte dos vínculos; Suporte e Operação vem em seguida, com remuneração mediana muito inferior; e Gestão e Direção, com o menor contingente entre as áreas técnicas, tem a maior mediana. A família de Estatística e Ciência de Dados, incorporada na revisão do recorte, é a menor em volume --- o que é esperado, dado que entrou para capturar uma ocupação específica, e não um bloco do mercado.
+
+\subsection{Distribuição Territorial}
+
+\input{estrutura/tabelas-geradas/tab-uf.tex}
+
+A concentração é acentuada: São Paulo responde por 40,9\% do estoque nacional, e as cinco primeiras unidades federativas somam quase 70\%. A remuneração mediana varia muito entre elas, e a leitura exige cuidado --- o Ceará aparece com mediana de 1,40 salário mínimo, bem abaixo das demais, o que reflete a concentração de centrais de atendimento classificadas em atividades de TI, e não um mercado de desenvolvimento mal remunerado.
+
+Vale repetir aqui a limitação declarada na \autoref{sec:limitacoes-metodo}: a localização é a do estabelecimento declarante. Municípios que atraem registro de empresas por incentivo fiscal aparecem superestimados, e o trabalho remoto agrava a distorção.
+
+\input{estrutura/tabelas-geradas/tab-clusters.tex}
+
+O agrupamento de municípios por trajetória, apresentado na \autoref{tab:clusters}, acrescenta o que o \textit{ranking} esconde. Os polos maduros são poucos e concentram estoque alto com crescimento moderado; os municípios de perfil emergente têm estoque pequeno, mas a maior taxa de crescimento do conjunto; e o grupo mais numeroso reúne mercados incipientes, com presença de TI ainda marginal. A conclusão é que o crescimento recente do emprego de TI não é um fenômeno exclusivo das capitais.
+
+\section{Pergunta 3: O Emprego Melhorou em Qualidade}
+\label{sec:resultado-q3}
+
+Crescer e melhorar são coisas diferentes, e a resposta aqui é negativa em uma dimensão central.
+
+A remuneração mediana, medida em salários mínimos para ser comparável ao longo de dezoito anos sem depender de escolha de deflator, era de 3,61 em 2007 e é de 3,55 em 2025 (\autoref{tab:estoque-serie}). Em outras palavras: o emprego de TI mais que dobrou em volume, mas a posição relativa do salário mediano do setor frente ao piso legal do país ficou praticamente onde estava. O crescimento foi de quantidade, não de remuneração relativa.
+
+O tempo médio de emprego caiu de 56 para 48 meses no mesmo período, indicando rotatividade maior --- consistente com um mercado em expansão, em que a troca de emprego é mais frequente e muitas vezes vantajosa para o trabalhador.
+
+\input{estrutura/tabelas-geradas/tab-risco.tex}
+
+A \autoref{tab:risco} detalha o risco de desligamento por tempo de casa. O padrão contraria uma expectativa comum: o risco \textbf{não} é máximo nos primeiros meses, e sim na faixa de 6 a 12 meses, caindo de forma monótona depois de dois anos de casa. A leitura mais plausível é a interação com o contrato de experiência e com o primeiro ciclo de avaliação: quem passa do primeiro ano tende a ficar.
+
+A tábua de vida de período mostra que cerca de 77\% dos vínculos chegam a completar um ano e menos de 60\% chegam a dois, com mediana de permanência na faixa de dois a três anos. Separando pelas duas lentes do recorte, quem está fora de empresas de TI alcança patamares de permanência mais altos nas faixas longas: 20,3\% atingem a faixa de 5 a 10 anos, contra 15,6\% de quem está em empresa de TI --- segunda evidência, independente da remuneração, de que as posições fora do setor são mais estáveis.
+
+\section{Pergunta 4: Quem Ganha Menos, e Por Quê}
+\label{sec:resultado-q4}
+
+\input{estrutura/tabelas-geradas/tab-hiato.tex}
+
+A \autoref{tab:hiato} apresenta a decomposição de Oaxaca-Blinder para as três comparações calculadas. Os dois eixos de desigualdade têm estruturas \textbf{qualitativamente distintas}, e é essa distinção --- e não a magnitude de cada hiato --- o resultado relevante.
+
+No eixo de \textbf{gênero}, o hiato bruto em 2025 é de 7,8\%, e a parcela explicada por características observáveis é \textbf{negativa}. Isso significa que, pelas características que o modelo observa --- escolaridade, área, porte, região, tempo de emprego, idade e jornada ---, as mulheres do setor deveriam ganhar \textit{mais} que os homens. Toda a diferença observada, e um pouco além dela, fica na parcela não explicada: é diferença de \textbf{retorno} às mesmas características, não de características.
+
+No eixo de \textbf{raça/cor}, a estrutura se inverte. Os hiatos são bem maiores e a maior parte deles é explicada por características: pessoas brancas estão sobre-representadas nas áreas, nos portes e nas regiões que pagam mais. É desigualdade de \textbf{acesso} --- quem chega a quais posições --- mais do que de remuneração dentro da mesma posição.
+
+A distinção tem consequência prática direta. Política de equidade salarial dentro da empresa atua sobre a parcela não explicada, e portanto sobre o hiato de gênero; política de acesso --- formação, recrutamento, promoção --- atua sobre a parcela explicada, e portanto sobre o hiato racial. Tratar os dois eixos com o mesmo instrumento ignora o que a decomposição mostra.
+
+Duas cautelas precisam acompanhar essa leitura. A primeira, já registrada na \autoref{subsec:oaxaca}: a parcela não explicada não é medida de discriminação, e sim um limite superior para ela. A segunda é que a série do hiato de gênero é \textbf{instável} --- há anos com hiato próximo de zero e até negativo no meio da série ---, o que recomenda não ler a trajetória como tendência monotônica, mas comparar as pontas e discutir a composição do setor em cada período.
+
+Sobre composição: a participação feminina no estoque de TI caiu de 34,3\% em 2007 para 30,6\% em 2025. O setor cresceu 143\% e ficou proporcionalmente \textbf{menos} feminino, o que é um resultado em si. Parte dessa participação, note-se, só aparece por causa da revisão do recorte: a família de estatísticos incorporada tem entre 42\% e 47\% de mulheres, muito acima da média do recorte --- evidência de que a delimitação do que se chama ``tecnologia'' afeta a medida de equidade do setor.
+
+\section{Pergunta 5: Para Onde o Mercado Vai}
+\label{sec:resultado-q5}
+
+\input{estrutura/tabelas-geradas/tab-previsao.tex}
+
+A \autoref{tab:previsao} traz o desempenho dos modelos na validação de origem móvel. A especificação vencedora supera o \textit{baseline} ingênuo sazonal em 29\% de erro absoluto médio, o que justifica o modelo: ele erra sensivelmente menos do que repetir o mesmo mês do ano anterior. Vale notar que uma das seis especificações testadas ficou \textbf{abaixo} do \textit{baseline}, o que reforça a necessidade do piso de comparação --- sem ele, aquela especificação pareceria aceitável.
+
+O horizonte útil, porém, é curto, e isso corrige a proposta do TCC~1. A previsão mensal de saldo chega ao fim do primeiro ano de projeção com intervalo de predição que \textbf{cruza o zero}: o modelo não distingue, nessa distância, saldo positivo de negativo. Projetar até 2030, como previa a proposta, produziria um número sem conteúdo informativo. O trabalho reporta, portanto, um horizonte de 18 meses, com os intervalos explícitos.
+
+\subsection{\textit{Nowcast} do Estoque}
+
+\input{estrutura/tabelas-geradas/tab-nowcast.tex}
+
+\begin{quote}
+\small
+\textbf{Resultado provisório.} Os valores desta subseção são da rodada anterior à
+correção da ingestão parcial de 2022, descrita na \autoref{sec:achados-qualidade}.
+Os estimadores de \textit{nowcast} usam a série anual de estoque em seu ajuste, e
+essa série mudou com a correção. A ordem de desempenho entre os estimadores e a
+conclusão qualitativa --- estimar o presente é mais preciso do que prever o
+futuro --- não devem se alterar, mas os valores numéricos serão refeitos. Ver
+\autoref{quadro:pendencias}.
+\end{quote}
+
+A limitação de horizonte da previsão mensal contrasta com um resultado bem mais forte na estimação do \textbf{presente}. O estoque do ano corrente é desconhecido até a RAIS ser publicada no ano seguinte, mas o CAGED já divulgou parte do fluxo. A \autoref{tab:nowcast} mostra o teste mais exigente feito: os estimadores foram ajustados \textbf{sem} o ano de 2025 e usados para estimar o estoque daquele ano, cujo valor verdadeiro já é conhecido.
+
+O melhor estimador erra menos de 1\% em um estoque de mais de 1,3 milhão de vínculos, enquanto o estimador ingênuo --- supor estoque constante --- erra várias vezes mais. O resultado é relevante na prática: enquanto a previsão de fluxo a doze meses é incerta, a estimativa do estoque corrente é precisa, porque se apoia em informação já observada em lugar de extrapolação.
+
+Essa assimetria --- previsão de futuro incerta, estimação de presente precisa --- é o resultado de modelagem mais útil do trabalho, e vale como recomendação metodológica: em bases com defasagem de publicação, estimar o que já aconteceu e ainda não foi divulgado rende mais do que prever o que não aconteceu.
+
+\section{O \textit{Dashboard} Entregue}
+
+A camada de apresentação foi organizada pelas cinco perguntas de pesquisa, e não pela origem do dado. A decisão corrige um problema observado na primeira versão: com as abas organizadas por base (CAGED, RAIS, modelos), a interface apresentava gráficos corretos que não chegavam a uma conclusão --- a estrutura refletia como o dado foi produzido, não o que ele responde.
+
+A versão final tem sete abas: uma de abertura com a argumentação completa, uma por pergunta de pesquisa, cada uma abrindo com a resposta antes da evidência, e uma de método e limitações. Há ainda um modo de apresentação, que transforma o mesmo conteúdo em telas cheias para projeção, com os números vindos das mesmas tabelas da camada Gold --- não há como as duas versões divergirem.
+
+O \textit{dashboard} está implantado em nuvem e consome os dados publicados, não a infraestrutura local. Essa separação é o que permite que ele continue funcionando sem a máquina de desenvolvimento ligada.
+
+\section{Síntese das Respostas}
+
+O \autoref{quadro:sintese} reúne as respostas às cinco perguntas.
+
+\begin{quadro}[htbp]
+    \centering
+    \caption{Síntese das respostas às perguntas de pesquisa}
+    \label{quadro:sintese}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{%
+        >{\raggedright\arraybackslash\hsize=0.70\hsize}X
+        >{\raggedright\arraybackslash\hsize=1.30\hsize}X}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Pergunta} & \textbf{Resposta} \\
+        \midrule
+        1. Quanto cresceu? & 143\% em dezoito anos, de 560.040 para 1.361.231 vínculos, com o salto concentrado em 2021--2022 e desaceleração depois. \\
+        2. Onde está o trabalho? & 58\% dos profissionais de TI estão fora de empresas de TI, com remuneração e permanência maiores. O crescimento recente é mais rápido fora das capitais. \\
+        3. Melhorou em qualidade? & Não em remuneração relativa: a mediana em salários mínimos ficou estável (3,61 para 3,55). O tempo de emprego caiu, e o risco de desligamento é máximo entre 6 e 12 meses de casa. \\
+        4. Quem ganha menos? & Mulheres e pessoas negras, por mecanismos distintos: o hiato de gênero é inteiramente de retorno (parcela explicada negativa); o racial é majoritariamente de acesso. A participação feminina caiu de 34,3\% para 30,6\%. \\
+        5. Para onde vai? & A previsão de fluxo é útil por cerca de um ano, com intervalo que cruza o zero adiante disso. Já a estimação do estoque corrente por \textit{nowcast} erra menos de 1\% em teste com ano retido. \\
+        \bottomrule
+    \end{tabularx}
+    \\[4pt]
+    Fonte: Autoria própria.
+\end{quadro}
+
+Tomadas em conjunto, as respostas sustentam a tese que organiza o trabalho: o emprego formal de tecnologia no Brasil cresceu muito, \textbf{deixou de ser um setor para virar uma função} distribuída pela economia, e esse crescimento não se converteu em melhora de remuneração relativa nem em redução das desigualdades de gênero e raça que o setor carrega.

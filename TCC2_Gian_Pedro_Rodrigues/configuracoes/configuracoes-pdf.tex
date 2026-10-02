@@ -1,0 +1,48 @@
+﻿% CONFIGURAÃ‡Ã•ES DE APARÃÅ NCIA DO PDF FINAL--------------------------------------
+\makeatletter
+\hypersetup{%
+    portuguese,
+    colorlinks=true,   % true: "links" coloridos; false: "links" em caixas de texto
+    linkcolor=black,   % Links internos em preto (padrão do modelo UTFPR, sem vínculos coloridos)
+    citecolor=black,   % Links de citações/referências em preto
+    filecolor=black,   % Links de arquivos em preto
+    urlcolor=black,    % URLs em preto
+    breaklinks=true,
+    pdftitle={\@title},
+    pdfauthor={\@author},
+    pdfkeywords={RAIS, CAGED, Mercado de TI, Engenharia de Dados, Arquitetura Medalhão, DuckDB, MinIO, Streamlit, Prophet, Forecasting}
+}
+\makeatother
+
+% ALTERA O ASPECTO DA COR AZUL--------------------------------------------------
+\definecolor{blue}{RGB}{41,5,195}
+
+% REDEFINIÃ‡ÃÆ’O DE LABELS---------------------------------------------------------
+\def\equationautorefname~#1\null{Equa\c c\~ao~(#1)\null}
+
+% CRIA ÃNDICE REMISSIVO---------------------------------------------------------
+\makeindex
+
+% "Citado na página X" nas referências (gerado pelo abnt-refinfo do abntex2cite)
+% As linhas abaixo estavam suprimindo essa informação e foram desativadas.
+% \renewcommand*{\backref}[1]{}
+% \renewcommand*{\backrefalt}[4]{}
+
+% CABEÇALHO DAS PÁGINAS---------------------------------------------------------
+% "Capítulo N." em caixa normal (a classe já o exibe em itálico) e apenas o
+% título do capítulo em maiúsculas, ex.: "Capítulo 1. INTRODUÇÃO".
+% Anexado a \textual para sobrescrever o \chaptermark definido pela classe.
+\makeatletter
+\g@addto@macro\textual{%
+    \renewcommand{\chaptermark}[1]{%
+        \markboth{\@chapapp\ \thechapter.\ \MakeTextUppercase{#1}}%
+                 {\@chapapp\ \thechapter.\ \MakeTextUppercase{#1}}}%
+}
+\makeatother
+
+% HIFENIZAÃ‡ÃÆ’O DE PALAVRAS QUE NÃÆ’O ESTÃÆ’O NO DICIONÃRIO---------------------------
+\hyphenation{%
+    qua-dros-cha-ve
+    Kat-sa-gge-los
+}
+

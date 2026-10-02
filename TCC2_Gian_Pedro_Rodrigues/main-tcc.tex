@@ -1,0 +1,41 @@
+% \UseRawInputEncoding  % commented out: force raw input encoding causes mojibake on Windows
+\documentclass[oneside]{configuracoes/utfpr-abntex2}
+
+\input{configuracoes/pacotes.tex}
+\input{configuracoes/configuracoes-pdf.tex}
+
+\begin{document}
+
+% Elementos pré-textuais (numeração contínua, folio oculto)
+\pretextual
+
+% Pre-textuais
+\input{estrutura/pre-textuais/capa.tex}
+\input{estrutura/pre-textuais/folha-rosto.tex}
+\input{estrutura/pre-textuais/resumo.tex}
+\input{estrutura/pre-textuais/abstract.tex}
+
+% Listas
+\input{estrutura/pre-textuais/listas/listas-ilustracoes/lista-figuras.tex}
+\input{estrutura/pre-textuais/listas/lista-tabelas.tex}
+\input{estrutura/pre-textuais/listas/lista-quadros.tex}
+\input{estrutura/pre-textuais/listas/lista-siglas.tex}
+
+% Sumário
+\input{estrutura/pre-textuais/sumario.tex}
+
+% Textuais (ativa o folio visível e a numeração arábica)
+\textual
+\input{estrutura/textuais/introducao.tex}
+\input{estrutura/textuais/fundamentacao-teorica}
+\input{estrutura/textuais/materiais-e-metodos.tex}
+\input{estrutura/textuais/resultados.tex}
+\input{estrutura/textuais/consideracoes-finais.tex}
+
+% Pós-textuais
+\postextual
+\input{estrutura/pos-textuais/referencias.tex}
+\input{estrutura/pos-textuais/apendices.tex}
+%\input{estrutura/pos-textuais/anexos.tex}
+
+\end{document}

@@ -1,0 +1,21 @@
+% Gerado por scripts/gerar_tabelas.py --- não editar à mão.
+\begin{table}[htbp]
+    \centering
+    \caption{Volume de cada camada do \textit{data lake}}
+    \label{tab:volumes}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabular}{lrr}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Camada} & \textbf{Arquivos} & \textbf{Tamanho} \\
+        \midrule
+        Bronze & 1.190 & 56,28 GB \\
+        Silver (mercado completo) & 553 & 14,09 GB \\
+        Silver de TI & 628 & 1,32 GB \\
+        Gold & 25 & < 10 MB \\
+        \bottomrule
+    \end{tabular}
+    \\[4pt]
+    Fonte: Autoria própria, a partir da camada Gold.
+\end{table}

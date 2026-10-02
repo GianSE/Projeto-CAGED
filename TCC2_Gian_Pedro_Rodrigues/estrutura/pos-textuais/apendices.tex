@@ -1,0 +1,137 @@
+% APÊNDICES -------------------------------------------------------------------
+
+\begin{apendicesenv}
+
+\chapter{Códigos CNAE e CBO que definem o recorte de tecnologia}
+\label{apend:cbos}
+
+Este apêndice documenta o recorte aplicado, discutido na \autoref{sec:recorte}. Um vínculo entra na pesquisa se o estabelecimento tem CNAE de atividade de TI \textbf{ou} se a ocupação tem CBO de TI. As duas condições são mantidas como rótulos independentes em cada registro da camada tratada, o que permite distinguir as duas lentes nas análises.
+
+\section{Atividades econômicas (CNAE 2.0)}
+
+A \autoref{quadro:cnae} relaciona as subclasses CNAE que caracterizam a empresa como sendo do setor de TI.
+
+\begin{quadro}[H]
+    \centering
+    \caption{Subclasses CNAE que definem o setor de tecnologia}
+    \label{quadro:cnae}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabular}{lp{10.0cm}}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{CNAE} & \textbf{Atividade} \\
+        \midrule
+        6201500 & Desenvolvimento de programas de computador sob encomenda \\
+        6201501 & Desenvolvimento de programas de computador sob encomenda \\
+        6201502 & \textit{Web design} \\
+        6202300 & Desenvolvimento e licenciamento de programas customizáveis \\
+        6203100 & Desenvolvimento e licenciamento de programas não customizáveis \\
+        6204000 & Consultoria em tecnologia da informação \\
+        6209100 & Suporte técnico, manutenção e outros serviços em TI \\
+        6311900 & Tratamento de dados, hospedagem na internet e atividades relacionadas \\
+        6319400 & Portais, provedores de conteúdo e outros serviços de informação \\
+        6399200 & Outras atividades de prestação de serviços de informação \\
+        \bottomrule
+    \end{tabular}
+    \\[4pt]
+    Fonte: Autoria própria, a partir de \citeonline{CNAE2024}.
+\end{quadro}
+
+\section{Famílias ocupacionais (CBO 2002)}
+
+A seleção de ocupações é feita por \textbf{família} --- os quatro primeiros dígitos do código ---, mais três códigos avulsos, e menos cinco códigos excluídos. A \autoref{quadro:familias} apresenta essa definição com a justificativa de cada decisão.
+
+\begin{quadro}[H]
+    \centering
+    \caption{Famílias e códigos CBO que definem a ocupação de tecnologia}
+    \label{quadro:familias}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabular}{llp{7.6cm}}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Código} & \textbf{Situação} & \textbf{Família ocupacional e justificativa} \\
+        \midrule
+        1236   & Incluída & Gerentes de pesquisa e desenvolvimento: direção de serviços de informática. \\
+        1425   & Incluída & Gerentes de tecnologia da informação. \\
+        2031   & Incluída & Pesquisadores das ciências da computação; demais pesquisadores da família foram excluídos. \\
+        2112   & \textbf{Incluída na revisão} & Estatísticos: família sob a qual analistas e cientistas de dados são registrados. Ver \autoref{subsec:revisao-recorte}. \\
+        2122   & Incluída & Engenheiros em computação. \\
+        2123   & Incluída & Administradores de redes, sistemas e bancos de dados. \\
+        2124   & Incluída & Analistas de tecnologia da informação: núcleo do setor. \\
+        3171   & Incluída & Técnicos de desenvolvimento de sistemas e aplicações. \\
+        3172   & Incluída & Técnicos em operação e monitoração de computadores. \\
+        \midrule
+        313220 & Avulso   & Técnico em manutenção de equipamentos de informática. \\
+        313305 & Avulso   & Técnico em telecomunicações com aderência a redes de dados. \\
+        142135 & Avulso   & Gerente de rede e de sistemas (código recente). \\
+        \midrule
+        203110 & \textbf{Excluído} & Pesquisador em ciências da terra e meio ambiente. \\
+        203115 & \textbf{Excluído} & Pesquisador em física. \\
+        203120 & \textbf{Excluído} & Pesquisador em matemática. \\
+        203125 & \textbf{Excluído} & Pesquisador em química. \\
+        317115 & \textbf{Excluído} & Programador de máquinas-ferramenta com comando numérico: ocupação industrial. \\
+        \bottomrule
+    \end{tabular}
+    \\[4pt]
+    Nota: a exclusão incide apenas sobre a lente de ocupação. Um pesquisador em física
+    empregado em empresa de TI permanece no recorte pela lente de setor. \\
+    Fonte: Autoria própria, a partir de \citeonline{CBO2024}.
+\end{quadro}
+
+\section{Códigos observados no estoque}
+
+O \autoref{quadro:cbos} relaciona todos os códigos de seis dígitos efetivamente encontrados no estoque do último ano disponível, com a descrição oficial, a área atribuída e o número de vínculos. O quadro é \textbf{gerado a partir da camada Gold}, e não digitado: qualquer revisão do recorte se reflete nele automaticamente. É assim que se evita o problema descrito na \autoref{sec:achados-qualidade}, em que uma lista mantida à mão passou a divergir do recorte efetivamente aplicado.
+
+\input{estrutura/tabelas-geradas/tab-cbos.tex}
+
+\chapter{Consultas de verificação}
+\label{apend:consultas}
+
+As consultas a seguir podem ser executadas por qualquer pessoa, sem acesso à infraestrutura do projeto, bastando um cliente DuckDB com a extensão \texttt{httpfs}. Elas leem os dados publicados diretamente por HTTP.
+
+\section{Reprodutibilidade: o dado bruto reproduz a camada publicada?}
+
+Esta consulta aplica o recorte de tecnologia ao microdado bruto de um mês e compara o resultado com a camada tratada publicada. Diferença zero significa que o recorte é reproduzível a partir da fonte, conforme discutido na \autoref{sec:reprodutibilidade}.
+
+\begin{lstlisting}[language=SQL, basicstyle=\ttfamily\scriptsize, breaklines=true,
+                   frame=single, captionpos=b,
+                   caption={Verificação de reprodutibilidade do recorte},
+                   label={lst:reprodutibilidade}]
+WITH rotulado AS (
+    SELECT subclasse,
+           lpad(regexp_replace(trim(cbo2002ocupacao), '[^0-9]', '', 'g'), 6, '0') AS cbo6
+    FROM read_parquet('hf://datasets/Gianpedro/bronze_caged/caged_mov/ano=2025/mes=6/*.parquet')
+),
+cru AS (
+    SELECT count(*) AS linhas FROM rotulado
+    WHERE ( ( substr(cbo6, 1, 4) IN ('1236','1425','2031','2112','2122','2123','2124','3171','3172')
+              OR cbo6 IN ('313220','313305','142135') )
+            AND cbo6 NOT IN ('203110','203115','203120','203125','317115') )
+       OR subclasse IN ('6201500','6201501','6201502','6202300','6203100',
+                        '6204000','6209100','6311900','6319400','6399200')
+),
+publicado AS (
+    SELECT count(*) AS linhas
+    FROM read_parquet('hf://datasets/Gianpedro/caged-tecnologia/caged_mov/ano_particao=2025/mes_particao=6/*.parquet')
+)
+SELECT cru.linhas AS no_dado_cru, publicado.linhas AS na_camada_publicada,
+       cru.linhas - publicado.linhas AS diferenca
+FROM cru, publicado;
+\end{lstlisting}
+
+\section{Procedência de uma tradução}
+
+Esta consulta recupera a origem de qualquer descrição aplicada pelo \textit{pipeline}: de qual planilha de \textit{layout}, de qual aba, de qual caminho no servidor público e em que data a extração foi feita.
+
+\begin{lstlisting}[language=SQL, basicstyle=\ttfamily\scriptsize, breaklines=true,
+                   frame=single, captionpos=b,
+                   caption={Procedência das traduções de uma coluna codificada},
+                   label={lst:procedencia}]
+SELECT DISTINCT tabela, coluna, planilha, aba, caminho_ftp, extraido_em
+FROM read_parquet('hf://datasets/Gianpedro/bronze_caged/dicionarios.parquet')
+WHERE coluna = 'sexo';
+\end{lstlisting}
+
+\end{apendicesenv}

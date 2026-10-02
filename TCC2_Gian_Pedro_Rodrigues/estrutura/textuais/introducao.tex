@@ -1,0 +1,101 @@
+% CAPÍTULO 1 — INTRODUÇÃO -----------------------------------------------------------------------
+
+\chapter{Introdução}
+\label{cap:introducao}
+
+% Aviso de versão: remover quando as pendências da seção correspondente forem
+% concluídas. Mantido visível de propósito — quem lê precisa saber o que ainda
+% não está fechado antes de usar os números.
+\begin{center}
+\fbox{\begin{minipage}{0.92\textwidth}
+\small
+\textbf{Versão em desenvolvimento.} Este documento descreve um trabalho em
+andamento. A plataforma está construída e operando, e os resultados
+apresentados vêm da camada de dados efetivamente processada, mas há etapas de
+reprocessamento e republicação ainda pendentes --- entre elas o recálculo dos
+modelos de \textit{nowcast} após uma correção de dados aplicada à série de 2022.
+Os pontos em aberto, com o efeito de cada um sobre os resultados, estão
+declarados no \autoref{quadro:pendencias}, na \autoref{sec:pendencias}. Os
+números afetados estão identificados no texto como provisórios.
+\end{minipage}}
+\end{center}
+
+\vspace{0.6em}
+
+Poucos setores da economia brasileira se transformaram tão rápido quanto o de Tecnologia da Informação (TI). A transformação digital de empresas e órgãos públicos tem puxado a demanda por profissionais especializados, e entender como esse mercado se comporta passou a ser uma preocupação tanto de quem formula política pública quanto de gestores e dos próprios trabalhadores.
+
+No Brasil, as duas principais fontes oficiais sobre o emprego formal são mantidas pelo Ministério do Trabalho e Emprego (MTE): a Relação Anual de Informações Sociais (RAIS) e o Cadastro Geral de Empregados e Desempregados (CAGED). Combinadas, elas cobrem os vínculos formais em todo o país, trazendo informações sobre admissões, desligamentos, salários, jornadas e ocupações classificadas pela Classificação Brasileira de Ocupações (CBO) \cite{RAIS2024, CAGED2024}.
+
+\section{Contextualização}
+
+Segundo \citeonline{Reis2022}, a engenharia de dados se firmou como uma disciplina central nas organizações modernas: é dela a responsabilidade de construir e manter os sistemas que transformam dados brutos em ativos úteis para a tomada de decisão. No âmbito público, a RAIS e o CAGED acumulam décadas de registros do mercado formal e formam um acervo de grande valor para análises de longo prazo.
+
+O problema é que esses arquivos não foram pensados para consulta direta. Cada ano gera dezenas de gigabytes em formato texto, distribuídos em diferentes \textit{layouts} e codificações, o que inviabiliza qualquer análise feita com ferramentas convencionais. Sem uma camada de engenharia de dados que organize e padronize esse acervo, ele permanece subutilizado.
+
+\section{Motivação}
+
+Estudos sobre o mercado de TI brasileiro costumam trabalhar com recortes temporais curtos ou agregações setoriais publicadas por entidades como a BRASSCOM \cite{Brasscom2024} e a FECOMERCIOSP \cite{Fecomercio2024}. Olhando direto para os microdados da RAIS e do CAGED, é possível ir muito além: dá para quantificar o crescimento do setor, mapear disparidades regionais, medir o impacto de eventos macroeconômicos (como a recessão de 2015--2016, a pandemia de COVID-19 e a aceleração digital de 2021--2023) e projetar tendências a partir de quase duas décadas de registros formais.
+
+O obstáculo está na própria engenharia desses dados. Antes de 2020, o CAGED vinha em arquivos de largura fixa; a partir de 2020, virou CSV compactado, com codificação e esquema diferentes. A RAIS, por sua vez, mudou de \textit{layout} várias vezes ao longo dos anos. Há ainda tabelas de referência externas --- que traduzem os códigos de ocupação (CBO), de atividade econômica (CNAE) e de município (IBGE) --- que precisam ser cruzadas com os registros para que esses códigos numéricos façam sentido. Construir um \textit{pipeline} reproduzível capaz de transformar essa massa heterogênea em séries temporais comparáveis é, por si só, uma contribuição relevante para quem trabalha com bases governamentais brasileiras.
+
+\section{Problema de Pesquisa}
+\label{sec:problema}
+
+A questão central que orienta o trabalho é: \textbf{como construir uma plataforma analítica integrada que permita explorar e projetar o mercado formal de trabalho em TI no Brasil a partir dos microdados da RAIS e do CAGED, de forma reprodutível e com baixo custo operacional?}
+
+Essa pergunta tem uma face de engenharia e uma face de análise, e as duas foram tratadas. A face de engenharia pergunta se é possível tratar dezenas de gigabytes de microdados governamentais heterogêneos em uma infraestrutura modesta, de forma que outra pessoa consiga reproduzir o resultado. A face de análise pergunta o que esses dados, uma vez tratados, respondem sobre o mercado de trabalho.
+
+Para dar foco à segunda face, o trabalho se organiza em torno de uma pergunta substantiva --- \textit{o crescimento do emprego formal em tecnologia entre 2007 e 2026 veio acompanhado de melhores salários e de mais equidade?} --- desdobrada em cinco perguntas específicas, apresentadas na \autoref{quadro:perguntas}. Elas estruturam tanto o capítulo de resultados quanto as abas do \textit{dashboard} entregue.
+
+\begin{quadro}[htbp]
+    \centering
+    \caption{Perguntas específicas de pesquisa e a evidência usada para responder cada uma}
+    \label{quadro:perguntas}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.5cm}
+                                 >{\raggedright\arraybackslash\hsize=1.05\hsize}X
+                                 >{\raggedright\arraybackslash\hsize=0.95\hsize}X}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{\#} & \textbf{Pergunta} & \textbf{Evidência} \\
+        \midrule
+        1 & Quanto o mercado cresceu, e em que ritmo? & Estoque anual (RAIS) e saldo mensal (CAGED) \\
+        2 & Onde está o trabalho de TI: em que empresas e em que lugares? & Cruzamento das lentes de setor e ocupação; agregações por UF e município; agrupamento de trajetórias municipais \\
+        3 & O emprego de TI melhorou em qualidade? & Remuneração em salários mínimos; tempo de permanência no vínculo; tábua de sobrevivência \\
+        4 & Quem ganha menos, e por quê? & Decomposição de Oaxaca-Blinder por sexo e por raça/cor \\
+        5 & Para onde o mercado vai? & Modelo SARIMA sobre o saldo mensal e estimador de \textit{nowcast} do estoque \\
+        \bottomrule
+    \end{tabularx}
+    \\[4pt]
+    Fonte: Autoria própria.
+\end{quadro}
+
+\section{Objetivos}
+
+O objetivo geral foi desenvolver uma plataforma integrada para análise histórica, visualização interativa e previsão do mercado de trabalho em TI no Brasil, a partir dos microdados da RAIS e do CAGED, com base em uma arquitetura Medalhão sobre \textit{data lake} compatível com a interface do \textit{Amazon Simple Storage Service} (S3).
+
+\subsection{Objetivos Específicos}
+
+\begin{itemize}
+    \item Implementar um \textit{pipeline} de engenharia de dados nas camadas Bronze, Silver e Gold, processando os microdados brutos da RAIS (2007--2025) e do CAGED (2007--2026);
+    \item Definir e documentar o recorte de tecnologia, delimitado pela união de dois critérios --- atividade econômica do estabelecimento (CNAE) e ocupação do vínculo (CBO) ---, mantendo os dois como rótulos analisáveis em vez de um filtro único;
+    \item Traduzir os códigos dos microdados pelos dicionários oficiais do próprio MTE, preservando o código original ao lado da descrição, e auditar o resultado dessa tradução;
+    \item Desenvolver um \textit{dashboard} interativo em Streamlit que consulte os arquivos Parquet por meio do DuckDB, sem etapa de importação prévia;
+    \item Aplicar modelos de série temporal da família SARIMA ao saldo mensal de empregos, selecionando a especificação por validação de origem móvel contra um \textit{baseline} ingênuo sazonal;
+    \item Estimar o estoque do ano corrente por \textit{nowcast}, combinando o estoque do último ano publicado da RAIS com o fluxo já divulgado pelo CAGED, e validar o estimador retendo um ano do treinamento;
+    \item Analisar a qualidade do emprego gerado (remuneração relativa, permanência e sobrevivência no vínculo) e as diferenças salariais por sexo e raça/cor, por decomposição de Oaxaca-Blinder;
+    \item Publicar as camadas tratadas e os agregados como conjuntos de dados abertos, de modo que a análise possa ser reproduzida sem acesso à infraestrutura local do projeto.
+\end{itemize}
+
+\section{Justificativa}
+
+Do lado científico, a pesquisa oferece um retrato quantitativo do mercado de TI nacional cobrindo quase duas décadas, com detalhamento por ocupação (CBO), unidade federativa, setor econômico (CNAE) e porte de estabelecimento, um nível de granularidade que costuma ficar fora das análises publicadas sobre o setor. Esse tipo de evidência pode alimentar decisões na formulação de políticas de formação profissional, no planejamento de recursos humanos e em estudos de economia do trabalho.
+
+No plano técnico, o \textit{pipeline} mostra que é possível substituir infraestruturas pesadas e caras por ferramentas leves e de código aberto, como DuckDB, Apache Parquet e MinIO, sem perder desempenho analítico em volumes dessa ordem. Consultas interativas passam a ser feitas direto sobre o \textit{data lake}, dispensando a etapa de importação prévia que costuma encarecer e atrasar esse tipo de projeto. O mesmo desenho pode ser reaproveitado em outras bases governamentais brasileiras de grande volume.
+
+Há ainda uma terceira contribuição, que não estava prevista na proposta e emergiu da execução: a auditoria sistemática do dado publicado pelo MTE revelou defeitos concretos na fonte --- entre eles uma conversão de salário mínimo invertida, colunas numéricas gravadas como texto e códigos de ocupação em uso que não constam de nenhum dicionário oficial. Documentar esses defeitos, e os testes que os detectam, é informação útil para qualquer pesquisa futura que use as mesmas bases.
+
+\section{Estrutura do Trabalho}
+
+Este trabalho está organizado em cinco capítulos. O \autoref{cap:referencial} apresenta a fundamentação teórica, começando pelos trabalhos relacionados e seguindo para as bases de dados, a arquitetura de dados, os modelos de série temporal e os métodos de decomposição salarial, sobrevivência e agrupamento utilizados. O \autoref{cap:metodologia} descreve os materiais e o método: as fontes, o recorte de tecnologia, a arquitetura implementada, as ferramentas e as revisões feitas em relação à proposta do TCC~1. O \autoref{cap:resultados} apresenta e discute os resultados, organizados pelas cinco perguntas da \autoref{quadro:perguntas}, incluindo os achados de qualidade do dado e as medidas de desempenho e reprodutibilidade da plataforma. O \autoref{cap:consideracoes} retoma as contribuições, declara as limitações e indica caminhos de continuidade.

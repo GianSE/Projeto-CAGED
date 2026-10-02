@@ -1,0 +1,24 @@
+% Gerado por scripts/gerar_tabelas.py --- não editar à mão.
+\begin{table}[htbp]
+    \centering
+    \caption{Desempenho dos modelos na validação de origem móvel}
+    \label{tab:previsao}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabular}{lrrrr}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Modelo} & \textbf{Dobras} & \textbf{MAE} & \textbf{RMSE} & \textbf{Ganho sobre o ingênuo} \\
+        \midrule
+        \texttt{SARIMA(1, 0, 1)(1, 1, 1, 12)} & 5 & 2.766 & 3.945 & 29,0\% \\
+        \texttt{SARIMA(2, 1, 2)(1, 1, 1, 12)} & 5 & 2.834 & 4.101 & 27,2\% \\
+        \texttt{SARIMA(1, 1, 1)(0, 1, 1, 12)} & 5 & 2.888 & 4.043 & 25,9\% \\
+        \texttt{SARIMA(0, 1, 1)(0, 1, 1, 12)} & 5 & 3.053 & 4.253 & 21,6\% \\
+        \texttt{SARIMA(2, 0, 1)(1, 1, 1, 12)} & 5 & 3.073 & 4.245 & 21,1\% \\
+        \texttt{naive sazonal} & 5 & 3.895 & 4.987 & 0,0\% \\
+        \texttt{SARIMA(1, 0, 0)(1, 1, 0, 12)} & 5 & 3.917 & 4.999 & -0,5\% \\
+        \bottomrule
+    \end{tabular}
+    \\[4pt]
+    Fonte: Autoria própria, a partir da camada Gold.
+\end{table}

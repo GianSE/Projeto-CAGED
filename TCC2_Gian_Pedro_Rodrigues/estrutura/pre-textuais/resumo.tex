@@ -1,0 +1,13 @@
+% RESUMO--------------------------------------------------------------------------------
+
+\begin{resumo}[RESUMO]
+\begin{SingleSpacing}
+
+\imprimirautorcitacao. \imprimirtitulo. \imprimirdata. \pageref{LastPage} f. \imprimirprojeto\ -- \imprimirprograma, \imprimirinstituicao. \imprimirlocal, \imprimirdata.\\
+
+O emprego formal em Tecnologia da Informação (TI) no Brasil cresceu de forma acelerada nas últimas duas décadas, mas as análises disponíveis sobre o setor costumam se apoiar em agregados fechados ou em recortes temporais curtos, sem permitir reprodução. Este trabalho construiu uma plataforma analítica completa sobre os microdados da Relação Anual de Informações Sociais (RAIS) e do Cadastro Geral de Empregados e Desempregados (CAGED), cobrindo 2007 a 2026, organizada em arquitetura Medalhão (Bronze, Silver e Gold) sobre \textit{data lake} MinIO compatível com a interface do \textit{Amazon Simple Storage Service} (S3), com arquivos Apache Parquet consultados pelo motor \textit{in-process} DuckDB e apresentação em \textit{dashboard} Streamlit. Foram ingeridos 56,3~GB de microdados brutos, dos quais o recorte de tecnologia --- definido pela união de atividade econômica (CNAE) e ocupação (CBO) --- resultou em 23,3 milhões de vínculos da RAIS e 12,2 milhões de movimentações do CAGED. A reprodutibilidade foi verificada contando o mesmo mês no dado bruto do servidor público e na camada publicada, com diferença zero. Os resultados mostram que o estoque de vínculos formais de TI passou de 560.040 em 2007 para 1.361.231 em 2025, crescimento de 143\%, enquanto a remuneração mediana medida em salários mínimos permaneceu praticamente estável (3,61 para 3,55); que 58\% dos profissionais de TI trabalham fora de empresas de TI, com remuneração mediana superior (4,71 contra 4,36 salários mínimos); que o hiato salarial de gênero caiu de 19,0\% para 7,8\%, mas permaneceu inteiramente não explicado por características observáveis; e que um estimador de \textit{nowcast} do estoque, validado com o ano de 2025 retido do treinamento, errou 0,45\%. O modelo SARIMA selecionado por validação de origem móvel superou o \textit{baseline} ingênuo sazonal em 29\% de erro absoluto médio. As camadas tratadas e os agregados foram publicados como conjuntos de dados abertos, e o \textit{dashboard} foi implantado em nuvem consumindo esses dados publicados.\\
+
+\textbf{Palavras-chave}: mercado de trabalho em TI; engenharia de dados; RAIS; CAGED; arquitetura medalhão; DuckDB; dados abertos; SARIMA.
+
+\end{SingleSpacing}
+\end{resumo}

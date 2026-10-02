@@ -1,0 +1,21 @@
+% Gerado por scripts/gerar_tabelas.py --- não editar à mão.
+\begin{table}[htbp]
+    \centering
+    \caption{\textit{Nowcast} do estoque: estimadores ajustados sem o ano de 2.025}
+    \label{tab:nowcast}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabular}{lrrrr}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Estimador} & \textbf{Estimado} & \textbf{Observado} & \textbf{Erro} & \textbf{Erro relativo} \\
+        \midrule
+        regressão OLS & 1.355.114 & 1.361.231 & -6.117 & -0,45\% \\
+        razão mediana & 1.350.558 & 1.361.231 & -10.673 & -0,78\% \\
+        identidade (delta = fluxo) & 1.341.782 & 1.361.231 & -19.449 & -1,43\% \\
+        ingênuo (sem mudança) & 1.311.311 & 1.361.231 & -49.920 & -3,67\% \\
+        \bottomrule
+    \end{tabular}
+    \\[4pt]
+    Fonte: Autoria própria, a partir da camada Gold.
+\end{table}
