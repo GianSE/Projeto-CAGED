@@ -11,7 +11,7 @@ erros_ingestao_rais.txt
 env.py
 tcc_backup_bronze
 bkp_temporario
-
+referencias_utfpr
 # Parquets consolidados para publicacao: vao para o Hugging Face, nao para o
 # git (o maior passa de 100 MB, limite rigido do GitHub por arquivo).
 publicacao/detalhado/
@@ -24,3 +24,23 @@ publicacao/**/*.parquet
 # Os agregados sao pequenos (~100 KB) e VAO versionados de proposito: sao o
 # fallback do dashboard quando nao ha acesso aos dados detalhados.
 !dados_publicados/
+# Artefatos de compilacao do LaTeX, escopados na pasta do TCC: o PDF e os
+# auxiliares sao resultado, nao fonte. O Overleaf recompila do zero a partir dos
+# .tex, e versionar o .pdf geraria conflito em cada compilacao local.
+TCC2_Gian_Pedro_Rodrigues/*.aux
+TCC2_Gian_Pedro_Rodrigues/*.bbl
+TCC2_Gian_Pedro_Rodrigues/*.blg
+TCC2_Gian_Pedro_Rodrigues/*.brf
+TCC2_Gian_Pedro_Rodrigues/*.fdb_latexmk
+TCC2_Gian_Pedro_Rodrigues/*.fls
+TCC2_Gian_Pedro_Rodrigues/*.idx
+TCC2_Gian_Pedro_Rodrigues/*.ilg
+TCC2_Gian_Pedro_Rodrigues/*.ind
+TCC2_Gian_Pedro_Rodrigues/*.lof
+TCC2_Gian_Pedro_Rodrigues/*.log
+TCC2_Gian_Pedro_Rodrigues/*.loq
+TCC2_Gian_Pedro_Rodrigues/*.lot
+TCC2_Gian_Pedro_Rodrigues/*.out
+TCC2_Gian_Pedro_Rodrigues/*.synctex.gz
+TCC2_Gian_Pedro_Rodrigues/*.toc
+TCC2_Gian_Pedro_Rodrigues/main-tcc.pdf

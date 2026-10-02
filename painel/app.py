@@ -180,6 +180,19 @@ def _int(valor) -> int:
         return 0
 
 
+def _lista(valor) -> list[str] | None:
+    """
+    Normaliza para lista de strings o que pode vir como string ou lista.
+
+    Quem monta o comando espalha o valor com `*`, e uma string entra caractere
+    por caractere: `{"tabela": "rais_vinc"}` virava `--tabela r a i s _ v i n c`,
+    e o job morria no argparse antes de processar uma linha.
+    """
+    if not valor:
+        return None
+    return [valor] if isinstance(valor, str) else [str(v) for v in valor]
+
+
 def _float(valor) -> float:
     try:
         return float(valor)
@@ -615,11 +628,13 @@ def api_manutencao():
 
     resultado = processos.iniciar_manutencao(
         job=job,
-        tabela=corpo.get("tabela") or None,
+        # Aceita string ou lista: `iniciar_manutencao` espalha o valor com `*`,
+        # e uma string entraria caractere por caractere ("--tabela r a i s ...").
+        tabela=_lista(corpo.get("tabela")),
         ano_inicio=_int(corpo.get("ano_inicio", 0)),
         ano_fim=_int(corpo.get("ano_fim", 9999)) or 9999,
         so_listar=bool(corpo.get("so_listar")),
-        coluna=corpo.get("coluna") or None,
+        coluna=_lista(corpo.get("coluna")),
     )
     return jsonify(resultado), (200 if resultado["ok"] else 409)
 

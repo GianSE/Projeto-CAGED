@@ -117,6 +117,75 @@ def completude(con, fs, bucket: str, tabela: str) -> list[str]:
 
 
 
+def pedacos_faltantes(con, fs, bucket: str, tabela: str) -> list[str]:
+    """
+    Todo pedaço de arquivo-fonte tem saída na camada?
+
+    Arquivos grandes são processados em faixas de linhas ("pedaços"), e a
+    completude por arquivo não enxerga isso: basta um pedaço chegar para o
+    arquivo-fonte contar como presente. Esta verificação recalcula os pedaços
+    esperados com a MESMA função que o construtor usa — reimplementá-la aqui
+    criaria duas divisões que divergiriam na primeira mudança — e confronta com
+    a procedência registrada na camada.
+
+    Quando encontra ausência, conta no bronze quantas linhas do recorte havia
+    naquela faixa: pedaço legitimamente sem nenhuma linha de tecnologia não gera
+    saída, e acusá-lo seria alarme falso. Quando não encontra nada, não lê dado
+    nenhum — só rodapés de metadados.
+    """
+    from silver_rais.construir_silver import _pedacos
+    from silver_caged.construir_silver import origens_existentes
+
+    presentes: dict[str, set[str]] = defaultdict(set)
+    for ano, origens in origens_existentes(con, fs, bucket, tabela).items():
+        if ano is not None:
+            presentes[str(ano)] |= {re.sub(r"_parte90$", "", o) for o in origens}
+
+    problemas = []
+    for caminho in sorted(fs.glob(f"{BUCKET_BRONZE}/{tabela}/**/*.parquet")):
+        m = re.search(r"ano=(\d{4})", caminho)
+        if not m:
+            continue
+        ano, stem = m.group(1), caminho.split("/")[-1].removesuffix(".parquet")
+        esperados = _pedacos(con, f"s3://{caminho}", stem)
+        if len(esperados) == 1:
+            continue                      # arquivo não dividido: já coberto acima
+        for rotulo, faixa in esperados:
+            if rotulo in presentes.get(ano, set()):
+                continue
+            n = _linhas_do_recorte(con, tabela, f"s3://{caminho}", faixa)
+            if n > 0:
+                problemas.append(f"{ano}: pedaço {rotulo} ausente "
+                                 f"({n:,} linha(s) do recorte no bronze)")
+    return problemas
+
+
+def _linhas_do_recorte(con, tabela: str, origem_s3: str, faixa) -> int:
+    """Quantas linhas daquela faixa do arquivo de origem estão no recorte."""
+    from gold_caged import escopo_tecnologia as esc
+
+    try:
+        colunas = [r[0] for r in con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{origem_s3}')").fetchall()]
+        col_cnae, col_cbo = esc.colunas_da_tabela(tabela, colunas)
+        predicado = esc.sql_filtro_tecnologia(
+            f'"{col_cnae}"' if col_cnae else None,
+            f'"{col_cbo}"' if col_cbo else None)
+        if not predicado:
+            return 0
+        recorte = ""
+        if faixa:
+            inicio, fim = faixa
+            recorte = (f" AND file_row_number >= {inicio} "
+                       f"AND file_row_number < {fim}")
+        return con.execute(
+            f"SELECT count(*) FROM read_parquet('{origem_s3}', "
+            f"file_row_number=true) WHERE {predicado}{recorte}").fetchone()[0]
+    except Exception:
+        # Na dúvida, reporta: falso alarme é melhor que dado sumido sem aviso.
+        return 1
+
+
 def _sem_tecnologia(con, tabela: str, arquivo_bronze: str) -> bool:
     """
     A origem tem zero linha dentro do recorte de tecnologia?
@@ -287,9 +356,18 @@ def main() -> int:
             continue
         prefixo = _prefixo_particao(fs, args.bucket, tabela)
         achados = []
-        for rotulo, fn in (("completude", lambda: completude(con, fs, args.bucket, tabela)),
-                           ("schema", lambda: deriva_de_schema(con, args.bucket, tabela, prefixo)),
-                           ("tradução", lambda: traducao_vazia(con, args.bucket, tabela, prefixo))):
+        verificacoes = [
+            ("completude", lambda: completude(con, fs, args.bucket, tabela)),
+            ("schema", lambda: deriva_de_schema(con, args.bucket, tabela, prefixo)),
+            ("tradução", lambda: traducao_vazia(con, args.bucket, tabela, prefixo)),
+        ]
+        # Só a RAIS é processada em pedaços; no CAGED cada arquivo do bronze sai
+        # inteiro, e a completude por arquivo já responde.
+        if tabela.startswith("rais"):
+            verificacoes.append(
+                ("pedaços", lambda: pedacos_faltantes(con, fs, args.bucket, tabela)))
+
+        for rotulo, fn in verificacoes:
             try:
                 for msg in fn():
                     achados.append(f"      [{rotulo}] {msg}")
