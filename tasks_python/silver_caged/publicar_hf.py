@@ -599,7 +599,7 @@ def main() -> int:
                         "ou o recorte de tecnologia (bucket silver-ti).")
     p.add_argument("--camada", choices=("caged", "rais"), default="caged",
                    help="Qual dataset publicar. Muda espelho local, tabelas e card.")
-    p.add_argument("--repo-ti", default="Gianpedro/caged-tecnologia",
+    p.add_argument("--repo-ti", default="Gianpedro/silver-caged-ti",
                    help="Dataset do recorte de TI, referenciado no card do CAGED")
     p.add_argument("--repo-caged", default="Gianpedro/caged-microdados-traduzidos",
                    help="Dataset do CAGED, referenciado no card da RAIS")

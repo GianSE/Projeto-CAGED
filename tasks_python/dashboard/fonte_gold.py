@@ -38,7 +38,7 @@ from extracao_ftp.config_extracao import BUCKET_GOLD
 # A gold publicada. 3 MB em 24 tabelas — os mesmos números da silver, já
 # agregados. Ver gold_unificado/publicar_gold.py.
 GOLD_PUBLICADA = ("https://huggingface.co/datasets/Gianpedro/"
-                  "mercado-ti-gold/resolve/main")
+                  "gold-analise-mercado-ti/resolve/main")
 
 # Tabela usada para testar se o MinIO responde. Qualquer uma serve; esta é
 # pequena e existe desde o primeiro build territorial.

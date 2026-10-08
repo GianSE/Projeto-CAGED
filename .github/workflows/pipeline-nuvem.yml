@@ -131,7 +131,7 @@ jobs:
           from huggingface_hub import hf_hub_download
           import shutil
           try:
-              p = hf_hub_download('Gianpedro/mercado-ti-gold', 'geo_municipios.parquet', repo_type='dataset')
+              p = hf_hub_download('Gianpedro/gold-analise-mercado-ti', 'geo_municipios.parquet', repo_type='dataset')
               shutil.copy(p, '../publicacao/gold/geo_municipios.parquet')
               print('geo_municipios.parquet semeado')
           except Exception as e:

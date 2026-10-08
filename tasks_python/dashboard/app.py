@@ -521,7 +521,7 @@ diretamente:
 
 ```python
 import duckdb
-BASE = "https://huggingface.co/datasets/Gianpedro/caged-tecnologia/resolve/main"
+BASE = "https://huggingface.co/datasets/Gianpedro/silver-caged-ti/resolve/main"
 duckdb.sql(f"SELECT ano, sum(saldo) FROM read_parquet('{{BASE}}/caged_ti.parquet') GROUP BY 1")
 ```
 

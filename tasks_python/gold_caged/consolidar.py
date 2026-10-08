@@ -145,7 +145,7 @@ def main() -> int:
     print(f"\n🏁 {ok} arquivo(s) de ano gerado(s) · {total / 1e6:.1f} MB no total em {DIR_SAIDA}")
     print("\nPróximo passo — publicar no Hugging Face:")
     print("   set HF_TOKEN=hf_xxxxx")
-    print("   python -m gold_caged.publicar_hf --repo SEU_USUARIO/caged-tecnologia")
+    print("   python -m gold_caged.publicar_hf --repo SEU_USUARIO/silver-caged-ti")
     return 0 if ok else 1
 
 

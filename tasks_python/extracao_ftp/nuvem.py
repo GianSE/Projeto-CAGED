@@ -32,10 +32,10 @@ from pathlib import Path
 
 MODO_NUVEM = os.getenv("MODO_NUVEM", "").strip().lower() in ("1", "true", "sim")
 
-REPO_BRONZE_CAGED = os.getenv("REPO_BRONZE_CAGED", "Gianpedro/bronze_caged")
-REPO_BRONZE_RAIS = os.getenv("REPO_BRONZE_RAIS", "Gianpedro/bronze_rais")
-REPO_SILVER_TI_CAGED = os.getenv("REPO_SILVER_TI_CAGED", "Gianpedro/caged-tecnologia")
-REPO_SILVER_TI_RAIS = os.getenv("REPO_SILVER_TI_RAIS", "Gianpedro/rais-tecnologia")
+REPO_BRONZE_CAGED = os.getenv("REPO_BRONZE_CAGED", "Gianpedro/bronze-caged")
+REPO_BRONZE_RAIS = os.getenv("REPO_BRONZE_RAIS", "Gianpedro/bronze-rais")
+REPO_SILVER_TI_CAGED = os.getenv("REPO_SILVER_TI_CAGED", "Gianpedro/silver-caged-ti")
+REPO_SILVER_TI_RAIS = os.getenv("REPO_SILVER_TI_RAIS", "Gianpedro/silver-rais-ti")
 
 # Dicionários do MTE (CBO, CNAE, escolaridade, ...) — compartilhados entre
 # CAGED e RAIS desde a extração local, por isso vivem num repositório

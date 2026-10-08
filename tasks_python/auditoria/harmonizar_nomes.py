@@ -35,7 +35,7 @@ from auditoria.repor_do_hub import listar
 from extracao_ftp.config_extracao import BUCKET_SILVER_TI, conectar_duckdb
 from silver_rais import mapeamento as mp
 
-REPO = "Gianpedro/rais-tecnologia"
+REPO = "Gianpedro/silver-rais-ti"
 
 
 def _fs():

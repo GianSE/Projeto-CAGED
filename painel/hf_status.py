@@ -34,8 +34,8 @@ REPOS = {
     "rais": os.getenv("HF_REPO_RAIS", "Gianpedro/rais-microdados-traduzidos"),
     # Bronze: o dado cru em parquet, publicado em repositório próprio. O painel
     # acompanha os quatro para que nenhuma publicação fique sem barra.
-    "bronze_caged": os.getenv("HF_REPO_BRONZE_CAGED", "Gianpedro/bronze_caged"),
-    "bronze_rais": os.getenv("HF_REPO_BRONZE_RAIS", "Gianpedro/bronze_rais"),
+    "bronze_caged": os.getenv("HF_REPO_BRONZE_CAGED", "Gianpedro/bronze-caged"),
+    "bronze_rais": os.getenv("HF_REPO_BRONZE_RAIS", "Gianpedro/bronze-rais"),
 }
 
 # Mantido para quem já chamava assim (a rota de publicação do painel).

@@ -31,7 +31,7 @@ from pathlib import Path
 
 from extracao_ftp.config_extracao import BUCKET_GOLD
 
-REPO = "Gianpedro/mercado-ti-gold"
+REPO = "Gianpedro/gold-analise-mercado-ti"
 RAIZ = Path(__file__).resolve().parents[2]
 DIR_LOCAL = RAIZ / "publicacao" / "gold"
 

@@ -21,8 +21,8 @@ MinIO no mesmo disco. Publicando um ano de cada vez e apagando o espelho
 depois, o pico fica no tamanho de um ano.
 
 Uso:
-    python -m publicar_bronze --camada caged --repo Gianpedro/bronze_caged
-    python -m publicar_bronze --camada rais  --repo Gianpedro/bronze_rais
+    python -m publicar_bronze --camada caged --repo Gianpedro/bronze-caged
+    python -m publicar_bronze --camada rais  --repo Gianpedro/bronze-rais
     python -m publicar_bronze --camada rais  --repo ... --ano-inicio 2015
 """
 import argparse

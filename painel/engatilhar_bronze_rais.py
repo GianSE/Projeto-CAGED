@@ -31,7 +31,7 @@ from painel import hf_status
 from painel.processos import DIR_LOGS_EXECUCOES
 
 PAINEL = "http://127.0.0.1:8088"
-REPO_CAGED = "Gianpedro/bronze_caged"
+REPO_CAGED = "Gianpedro/bronze-caged"
 INTERVALO = 60
 
 
@@ -116,7 +116,7 @@ def main() -> int:
 
     print("✅ CAGED íntegro. Disparando o bronze da RAIS (52,56 GB, 38 lotes).",
           flush=True)
-    corpo = json.dumps({"camada": "rais", "repo": "Gianpedro/bronze_rais"}).encode()
+    corpo = json.dumps({"camada": "rais", "repo": "Gianpedro/bronze-rais"}).encode()
     req = urllib.request.Request(f"{PAINEL}/api/bronze/publicar", data=corpo,
                                  headers={"Content-Type": "application/json"},
                                  method="POST")

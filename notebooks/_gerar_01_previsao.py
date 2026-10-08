@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 REPO = "GianSE/Projeto-CAGED"
-GOLD = "https://huggingface.co/datasets/Gianpedro/mercado-ti-gold/resolve/main"
+GOLD = "https://huggingface.co/datasets/Gianpedro/gold-analise-mercado-ti/resolve/main"
 DESTINO = Path(r"c:\Users\gian\Desktop\tcc\Projeto-CAGED\notebooks\01_previsao_saldo.ipynb")
 
 celulas = []
@@ -61,7 +61,7 @@ o modelo teria se saído se estivesse no ar".
 
 ### De onde vêm os dados
 
-Da camada **gold** publicada no Hugging Face — [`{{'Gianpedro/mercado-ti-gold'}}`](https://huggingface.co/datasets/Gianpedro/mercado-ti-gold).
+Da camada **gold** publicada no Hugging Face — [`{{'Gianpedro/gold-analise-mercado-ti'}}`](https://huggingface.co/datasets/Gianpedro/gold-analise-mercado-ti).
 São 3,3 MB, públicos, sem credencial. Este caderno roda em qualquer máquina:
 não precisa de MinIO, Docker, nem dos 60 GB de microdados brutos.
 """)

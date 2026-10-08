@@ -27,7 +27,7 @@ import json
 
 from extracao_ftp.config_extracao import BUCKET_SILVER_TI
 
-REPO = "Gianpedro/caged-tecnologia"
+REPO = "Gianpedro/silver-caged-ti"
 BASE = f"https://huggingface.co/datasets/{REPO}/resolve/main"
 
 

@@ -16,7 +16,7 @@ PRÉ-REQUISITOS
        python -m gold_caged.consolidar
 
 Uso:
-    python -m gold_caged.publicar_hf --repo SEU_USUARIO/caged-tecnologia
+    python -m gold_caged.publicar_hf --repo SEU_USUARIO/silver-caged-ti
 
 Ao final ele imprime a variável DADOS_URL_BASE para configurar no deploy.
 """
@@ -196,7 +196,7 @@ def main() -> int:
     # Com padrão, e não obrigatório: os arquivos consolidados pertencem ao mesmo
     # dataset da camada de TI — ficam na raiz dele, ao lado das partições — e o
     # painel dispara este módulo sem passar argumento nenhum.
-    p.add_argument("--repo", default="Gianpedro/caged-tecnologia",
+    p.add_argument("--repo", default="Gianpedro/silver-caged-ti",
                    help="Destino no formato usuario/nome-do-dataset")
     p.add_argument("--privado", action="store_true",
                    help="Cria o dataset privado (padrão: público)")
