@@ -89,8 +89,10 @@ def montar(ano: int, janela: int, minimo: int, minimo_base: int = 10,
     con = con or conectar_duckdb()
     con.execute("SET enable_progress_bar=false")
 
-    mapa = f"read_parquet('s3://{BUCKET_GOLD}/mapa_municipio.parquet')"
-    geo = f"read_parquet('s3://{BUCKET_GOLD}/geo_municipios.parquet')"
+    from extracao_ftp import nuvem
+
+    mapa = f"read_parquet('{nuvem.caminho_gold('mapa_municipio')}')"
+    geo = f"read_parquet('{nuvem.caminho_gold('geo_municipios')}')"
     base = ano - janela
 
     return con.execute(f"""
@@ -276,7 +278,8 @@ def main() -> int:
     con = conectar_duckdb()
     con.execute("SET enable_progress_bar=false")
     con.register("clusters", d)
-    destino = f"s3://{BUCKET_GOLD}/municipios_cluster.parquet"
+    from extracao_ftp import nuvem
+    destino = nuvem.caminho_gold("municipios_cluster")
     con.execute(f"""
         COPY (SELECT * FROM clusters) TO '{destino}' (
             FORMAT PARQUET,

@@ -90,7 +90,9 @@ def _colunas_bronze(con, tabela: str) -> list[str]:
     # uniforme e quebra nessa mistura). ano_particao/mes_particao já vêm como
     # colunas de verdade em cada linha, gravadas na ingestão bronze; não
     # precisa reconstruir a partição a partir do caminho.
-    caminho = f"s3://{BUCKET_BRONZE}/{tabela}/**/*.parquet"
+    from extracao_ftp import nuvem
+
+    caminho = nuvem.glob_bronze(tabela)
     try:
         return [
             r[0] for r in con.execute(
@@ -365,6 +367,16 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
     arquivo pode ter seu próprio schema — o CAGED antigo muda de colunas
     entre eras, e um COPY único sobre o glob inteiro exigiria schema uniforme.
     """
+    from extracao_ftp import nuvem
+
+    if nuvem.MODO_NUVEM:
+        if not hive:
+            raise ValueError("modo nuvem só publica no formato hive (--hive)")
+        if not so_tecnologia:
+            raise ValueError("modo nuvem só processa o recorte de tecnologia "
+                              "(--mercado-completo não tem repositório no Hub)")
+        fs = nuvem.FsNuvem(tabela)
+
     # Cada recorte tem seu próprio bucket: os dois podem coexistir sem que um
     # glob alcance o outro por engano.
     bucket_destino = bucket_silver(so_tecnologia)
@@ -393,7 +405,18 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
     feitos = pulados = falhas = 0
 
     # Na saída hive a checagem de "já existe" é feita contra uma listagem única.
-    ja_gravados = _stems_existentes(con, fs, bucket_destino, tabela) if hive and not forcar else set()
+    # No modo nuvem a decisão de QUAL ANO reprocessar já foi feita na
+    # orquestração do CI (ver extracao_ftp/verificar_novidades.py) — aqui
+    # sempre reconstrói o que foi pedido, sem reconciliar stem a stem contra
+    # o Hub (o volume por job, um ano, é pequeno o bastante pra não compensar
+    # essa complexidade a mais).
+    ja_gravados = (_stems_existentes(con, fs, bucket_destino, tabela)
+                   if hive and not forcar and not nuvem.MODO_NUVEM else set())
+
+    destino_local_nuvem = nuvem.DIR_TEMP_NUVEM / tabela if nuvem.MODO_NUVEM else None
+    if destino_local_nuvem:
+        nuvem.preparar_staging()
+        destino_local_nuvem.mkdir(parents=True, exist_ok=True)
 
     for n, origem in enumerate(arquivos, start=1):
         stem = origem.split("/")[-1].removesuffix(".parquet")
@@ -402,7 +425,8 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
             if stem in ja_gravados:
                 pulados += 1
                 continue
-            destino_s3 = f"s3://{bucket_destino}/{tabela}"
+            destino_s3 = (str(destino_local_nuvem) if nuvem.MODO_NUVEM
+                           else f"s3://{bucket_destino}/{tabela}")
         else:
             destino_rel = origem.replace(f"{BUCKET_BRONZE}/", f"{bucket_destino}/", 1)
             if not forcar and fs.exists(destino_rel):
@@ -410,7 +434,11 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
                 continue
             destino_s3 = f"s3://{destino_rel}"
 
-        origem_s3 = f"s3://{origem}"
+        if nuvem.MODO_NUVEM:
+            bucket_origem, resto_origem = origem.split("/", 1)
+            origem_s3 = nuvem.fonte_leitura(nuvem.repo_bronze(tabela), resto_origem)
+        else:
+            origem_s3 = f"s3://{origem}"
 
         colunas = _colunas_arquivo(con, origem_s3)
         if not colunas:
@@ -458,6 +486,11 @@ def construir(con, fs, tabela: str, ano_inicio: int, ano_fim: int, forcar: bool,
         except Exception as e:
             falhas += 1
             print(f"   [{n}/{len(arquivos)}] ❌ {origem.split('/')[-1]}: {str(e)[:200]}")
+
+    if destino_local_nuvem:
+        n_publicados = nuvem.publicar_diretorio(destino_local_nuvem, nuvem.repo_silver_ti(tabela))
+        print(f"   ☁️  {n_publicados} arquivo(s) publicado(s) em "
+              f"{nuvem.repo_silver_ti(tabela)}")
 
     decorrido = time.time() - inicio
     print(f"   📊 {feitos} gravado(s), {pulados} já existente(s), {falhas} falha(s) "

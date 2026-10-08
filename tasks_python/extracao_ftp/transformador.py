@@ -218,12 +218,29 @@ def detectar_encoding(arquivo: Path, amostra_bytes: int = 8 * 1024 * 1024) -> st
 
 
 def _copiar(con, leitura: str, item: ItemTrabalho) -> int:
-    """Executa o COPY para o MinIO e devolve a contagem de linhas gravadas."""
+    """
+    Executa o COPY e devolve a contagem de linhas gravadas.
+
+    No modo nuvem (sem MinIO) o destino é um arquivo local temporário, que
+    sobe para o Hugging Face em seguida e é apagado seguido — ver
+    extracao_ftp/nuvem.py. O SELECT tratado é idêntico nos dois modos; só
+    o destino muda.
+    """
     colunas = _colunas(con, leitura)
     if not colunas:
         raise RuntimeError("nenhuma coluna detectada no arquivo")
 
     select = _select_tratado(colunas, item)
+
+    from extracao_ftp import nuvem
+
+    if nuvem.MODO_NUVEM:
+        nuvem.preparar_staging()
+        destino = nuvem.DIR_TEMP_NUVEM / item.destino_rel.replace("/", "__")
+    else:
+        destino = None  # usa item.destino_s3 direto, mais abaixo
+
+    destino_copy = str(destino) if destino else item.destino_s3
 
     con.execute(
         f"""
@@ -231,7 +248,7 @@ def _copiar(con, leitura: str, item: ItemTrabalho) -> int:
             SELECT
             {select}
             FROM {leitura}
-        ) TO '{_sql_str(item.destino_s3)}' (
+        ) TO '{_sql_str(destino_copy)}' (
             FORMAT PARQUET,
             COMPRESSION '{PARQUET_COMPRESSION}',
             COMPRESSION_LEVEL {PARQUET_COMPRESSION_LEVEL},
@@ -241,8 +258,13 @@ def _copiar(con, leitura: str, item: ItemTrabalho) -> int:
     )
 
     total = con.execute(
-        f"SELECT count(*) FROM read_parquet('{_sql_str(item.destino_s3)}')"
+        f"SELECT count(*) FROM read_parquet('{_sql_str(destino_copy)}')"
     ).fetchone()[0]
+
+    if destino:
+        nuvem.publicar_arquivo(destino, nuvem.repo_bronze(item.tabela), item.destino_rel)
+        destino.unlink()
+
     return total
 
 

@@ -52,10 +52,17 @@ def _cliente_s3():
 
 
 class EstadoLake:
-    """Consulta o MinIO para saber o que já foi ingerido."""
+    """
+    Sabe o que já foi ingerido — no MinIO local, ou no Hugging Face no modo
+    nuvem (MODO_NUVEM=1, ver extracao_ftp/nuvem.py). A pergunta é a mesma
+    nos dois modos ("esse destino já existe?"); só a fonte consultada muda.
+    """
 
     def __init__(self):
-        self.s3 = _cliente_s3()
+        from extracao_ftp import nuvem
+
+        self.nuvem = nuvem.MODO_NUVEM
+        self.s3 = None if self.nuvem else _cliente_s3()
 
     @staticmethod
     def _partes(destino_s3: str) -> tuple[str, str]:
@@ -64,6 +71,10 @@ class EstadoLake:
         return bucket, chave
 
     def ja_existe(self, item: ItemTrabalho) -> bool:
+        if self.nuvem:
+            from extracao_ftp import nuvem
+
+            return nuvem.existe_remoto(nuvem.repo_bronze(item.tabela), item.destino_rel)
         bucket, chave = self._partes(item.destino_s3)
         try:
             self.s3.head_object(Bucket=bucket, Key=chave)
@@ -72,6 +83,12 @@ class EstadoLake:
             return False
 
     def tamanho_destino(self, item: ItemTrabalho) -> int:
+        if self.nuvem:
+            # Metadado de tamanho não é consultado hoje no modo nuvem: a
+            # listagem do Hub (`list_repo_files`) não traz tamanho sem uma
+            # chamada por arquivo, e nada do pipeline depende deste valor
+            # para decidir o que reprocessar — só `ja_existe` decide isso.
+            return 0
         bucket, chave = self._partes(item.destino_s3)
         try:
             return self.s3.head_object(Bucket=bucket, Key=chave)["ContentLength"]
@@ -79,6 +96,15 @@ class EstadoLake:
             return 0
 
     def testar_conexao(self) -> bool:
+        if self.nuvem:
+            from extracao_ftp import nuvem
+
+            try:
+                nuvem.arquivos_remotos(nuvem.REPO_BRONZE_CAGED)
+                return True
+            except Exception as e:
+                print(f"❌ Não consegui falar com o Hugging Face: {e}")
+                return False
         try:
             self.s3.list_buckets()
             return True

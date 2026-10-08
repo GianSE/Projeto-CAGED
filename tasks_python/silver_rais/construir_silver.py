@@ -54,7 +54,9 @@ def _fs_minio():
 
 
 def _colunas_bronze(con, tabela: str) -> list[str]:
-    caminho = f"s3://{BUCKET_BRONZE}/{tabela}/**/*.parquet"
+    from extracao_ftp import nuvem
+
+    caminho = nuvem.glob_bronze(tabela)
     try:
         return [
             r[0] for r in con.execute(
@@ -381,6 +383,14 @@ def construir(con, fs, tabela: str, so_tecnologia: bool = True,
     vira retomável (pula o que já existe) e cada arquivo pode ter seu próprio
     schema, o que importa porque o layout da RAIS muda ao longo dos anos.
     """
+    from extracao_ftp import nuvem
+
+    if nuvem.MODO_NUVEM:
+        if not so_tecnologia:
+            raise ValueError("modo nuvem só processa o recorte de tecnologia "
+                              "(--mercado-completo não tem repositório no Hub)")
+        fs = nuvem.FsNuvem(tabela)
+
     bucket_destino = bucket_silver(so_tecnologia)
     recorte = "só tecnologia" if so_tecnologia else "mercado completo"
     print(f"\n{'=' * 70}\n  🔨 SILVER: {tabela}  ({recorte} → {bucket_destino})\n{'=' * 70}")
@@ -398,14 +408,24 @@ def construir(con, fs, tabela: str, so_tecnologia: bool = True,
     # Dicionários uma vez por tabela, a partir da união das colunas de todos os
     # arquivos — não uma vez por arquivo.
     dicionarios = preparar_dicionarios(con, fs, tabela, _colunas_bronze(con, tabela))
-    ja_gravados = set() if forcar else _stems_existentes(con, fs, bucket_destino, tabela)
+    # No modo nuvem o CI já decidiu qual ano reprocessar (ver construir_silver.py
+    # do CAGED para a mesma observação); não reconcilia stem a stem contra o Hub.
+    ja_gravados = set() if (forcar or nuvem.MODO_NUVEM) else _stems_existentes(con, fs, bucket_destino, tabela)
 
-    destino_s3 = f"s3://{bucket_destino}/{tabela}"
+    destino_local_nuvem = nuvem.DIR_TEMP_NUVEM / tabela if nuvem.MODO_NUVEM else None
+    if destino_local_nuvem:
+        nuvem.preparar_staging()
+        destino_local_nuvem.mkdir(parents=True, exist_ok=True)
+    destino_s3 = str(destino_local_nuvem) if nuvem.MODO_NUVEM else f"s3://{bucket_destino}/{tabela}"
     total_linhas = feitos = pulados = falhas = 0
 
     for n, origem in enumerate(arquivos, start=1):
         stem = origem.split("/")[-1].removesuffix(".parquet")
-        origem_s3 = f"s3://{origem}"
+        if nuvem.MODO_NUVEM:
+            _, resto_origem = origem.split("/", 1)
+            origem_s3 = nuvem.fonte_leitura(nuvem.repo_bronze(tabela), resto_origem)
+        else:
+            origem_s3 = f"s3://{origem}"
 
         # A retomada é por ANO + PEDAÇO. O ano porque o nome não o carrega; o
         # pedaço porque em rais_vinc_sp são 9, e cair no último não pode custar
@@ -436,6 +456,11 @@ def construir(con, fs, tabela: str, so_tecnologia: bool = True,
             except Exception as e:
                 falhas += 1
                 print(f"   [{n}/{len(arquivos)}] ❌ {rotulo}: {str(e)[:200]}")
+
+    if destino_local_nuvem:
+        n_publicados = nuvem.publicar_diretorio(destino_local_nuvem, nuvem.repo_silver_ti(tabela))
+        print(f"   ☁️  {n_publicados} arquivo(s) publicado(s) em "
+              f"{nuvem.repo_silver_ti(tabela)}")
 
     print(f"   📊 {feitos} gravado(s), {pulados} já existente(s), {falhas} falha(s) "
           f"| {total_linhas:,} linhas novas em {(time.time() - inicio) / 60:.1f} min")

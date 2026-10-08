@@ -118,13 +118,29 @@ def _caminho(namespace: str, aba: str, planilha: str | None = None) -> str:
     tabelas de códigos que mudaram entre os anos (escolaridade antes/depois de
     2005 é o caso claro). Por isso ela passa `planilha` explicitamente.
     """
+    from extracao_ftp import nuvem
+
+    if nuvem.MODO_NUVEM:
+        if planilha:
+            return nuvem.fonte_leitura(nuvem.REPO_DICIONARIOS, f"{namespace}/{planilha}/{aba}.parquet")
+        return nuvem.fonte_leitura(nuvem.REPO_DICIONARIOS, f"{namespace}/**/{aba}.parquet")
+
     if planilha:
         return f"s3://{PREFIXO_DICIONARIOS}/{namespace}/{planilha}/{aba}.parquet"
     return f"s3://{PREFIXO_DICIONARIOS}/{namespace}/**/{aba}.parquet"
 
 
 def existe(fs, namespace: str, aba: str, planilha: str | None = None) -> bool:
-    """Verifica no MinIO se um dicionário existe, sem tentar lê-lo."""
+    """Verifica se um dicionário existe (no MinIO, ou no Hub no modo nuvem)."""
+    from extracao_ftp import nuvem
+
+    if nuvem.MODO_NUVEM:
+        arquivos = nuvem.arquivos_remotos(nuvem.REPO_DICIONARIOS)
+        if planilha:
+            return f"{namespace}/{planilha}/{aba}.parquet" in arquivos
+        return any(a.startswith(f"{namespace}/") and a.endswith(f"/{aba}.parquet")
+                   for a in arquivos)
+
     if planilha:
         return fs.exists(f"{PREFIXO_DICIONARIOS}/{namespace}/{planilha}/{aba}.parquet")
     # Espelha o glob de `_caminho`: vale tanto plano quanto aninhado.

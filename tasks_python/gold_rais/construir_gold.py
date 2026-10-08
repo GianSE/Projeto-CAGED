@@ -57,11 +57,12 @@ from extracao_ftp.config_extracao import (
     PARQUET_COMPRESSION_LEVEL,
     conectar_duckdb,
 )
+from extracao_ftp import nuvem
 from gold_caged import escopo_tecnologia as esc
 from gold_unificado.dicionario_canonico import sql_canonico
 
-FONTE_VINC = f"s3://{BUCKET_SILVER_TI}/rais_vinc/**/*.parquet"
-FONTE_ESTAB = f"s3://{BUCKET_SILVER_TI}/rais_estab/**/*.parquet"
+FONTE_VINC = nuvem.glob_silver_ti("rais_vinc")
+FONTE_ESTAB = nuvem.glob_silver_ti("rais_estab")
 
 COL_CNAE = "cnae_20_subclasse"
 COL_CBO = "cbo_ocupacao_2002"
@@ -254,7 +255,13 @@ AGREGADOS = {
 
 
 def construir(con, nome: str) -> bool:
-    destino = f"s3://{BUCKET_GOLD}/{nome}.parquet"
+    # No modo nuvem não há MinIO: grava direto na pasta local que
+    # `gold_unificado.publicar_gold` já lê para publicar (ver seu DIR_LOCAL)
+    # — pula o hop intermediário pelo bucket gold.
+    destino = (str(nuvem.DIR_GOLD_LOCAL / f"{nome}.parquet") if nuvem.MODO_NUVEM
+               else f"s3://{BUCKET_GOLD}/{nome}.parquet")
+    if nuvem.MODO_NUVEM:
+        nuvem.DIR_GOLD_LOCAL.mkdir(parents=True, exist_ok=True)
     print(f"\n🔨 {nome}")
     inicio = time.time()
     try:

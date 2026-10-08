@@ -52,8 +52,10 @@ TAMANHO_ROW_GROUP = 50_000
 
 
 def anos_disponiveis(con) -> list[int]:
-    mov = f"s3://{BUCKET_SILVER_TI}/caged_mov/**/*.parquet"
-    old = f"s3://{BUCKET_SILVER_TI}/caged_old/**/*.parquet"
+    from extracao_ftp import nuvem
+
+    mov = nuvem.glob_silver_ti("caged_mov")
+    old = nuvem.glob_silver_ti("caged_old")
     anos = set()
     for origem in (mov, old):
         try:
@@ -79,8 +81,10 @@ def sql_unificado(con, ano: int) -> str | None:
     geração sem dado ainda, ou já sem dado) só o lado que existe entra —
     sem isso, read_parquet num glob vazio derruba o ano inteiro.
     """
-    mov = f"s3://{BUCKET_SILVER_TI}/caged_mov/ano_particao={ano}/**/*.parquet"
-    old = f"s3://{BUCKET_SILVER_TI}/caged_old/ano_particao={ano}/**/*.parquet"
+    from extracao_ftp import nuvem
+
+    mov = nuvem.glob_silver_ti("caged_mov", f"ano_particao={ano}/**/*.parquet")
+    old = nuvem.glob_silver_ti("caged_old", f"ano_particao={ano}/**/*.parquet")
 
     bloco_mov = f"""
         SELECT

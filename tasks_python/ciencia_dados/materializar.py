@@ -46,8 +46,12 @@ warnings.simplefilter("ignore")
 
 
 def _gravar(con, df: pd.DataFrame, nome: str) -> int:
+    from extracao_ftp import nuvem
+
     con.register("_saida", df)
-    destino = f"s3://{BUCKET_GOLD}/{nome}.parquet"
+    if nuvem.MODO_NUVEM:
+        nuvem.DIR_GOLD_LOCAL.mkdir(parents=True, exist_ok=True)
+    destino = nuvem.caminho_gold(nome)
     con.execute(f"""
         COPY (SELECT * FROM _saida) TO '{destino}' (
             FORMAT PARQUET,
@@ -181,7 +185,10 @@ def main() -> int:
         except Exception as e:
             print(f"   ❌ falhou: {str(e)[:200]}")
 
-    print(f"\n🏁 {total} tabela(s) materializada(s) em s3://{BUCKET_GOLD}/")
+    from extracao_ftp import nuvem
+
+    destino_log = str(nuvem.DIR_GOLD_LOCAL) if nuvem.MODO_NUVEM else f"s3://{BUCKET_GOLD}/"
+    print(f"\n🏁 {total} tabela(s) materializada(s) em {destino_log}")
     return 0
 
 

@@ -58,7 +58,9 @@ TAMANHO_ROW_GROUP = 50_000
 
 
 def anos_na_silver(con, tabela: str) -> list[int]:
-    origem = f"s3://{BUCKET_SILVER_TI}/{tabela}/**/*.parquet"
+    from extracao_ftp import nuvem
+
+    origem = nuvem.glob_silver_ti(tabela)
     try:
         return [r[0] for r in con.execute(
             f"SELECT DISTINCT ano_particao FROM read_parquet('{origem}', union_by_name=true) "
@@ -69,7 +71,9 @@ def anos_na_silver(con, tabela: str) -> list[int]:
 
 
 def consolidar_ano(con, tabela: str, ano: int) -> bool:
-    origem = f"s3://{BUCKET_SILVER_TI}/{tabela}/ano_particao={ano}/**/*.parquet"
+    from extracao_ftp import nuvem
+
+    origem = nuvem.glob_silver_ti(tabela, f"ano_particao={ano}/**/*.parquet")
     destino = DIR_SAIDA / f"{tabela}_{ano}.parquet"
 
     try:

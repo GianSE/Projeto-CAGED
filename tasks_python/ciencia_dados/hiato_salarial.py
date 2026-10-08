@@ -57,6 +57,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from extracao_ftp import nuvem
 from extracao_ftp.config_extracao import BUCKET_SILVER_TI, conectar_duckdb
 from gold_caged import escopo_tecnologia as esc
 from gold_unificado.dicionario_canonico import sql_canonico
@@ -90,7 +91,7 @@ def _sql(ano: int) -> str:
             CASE WHEN {esc.sql_filtro_cnae('cnae_20_subclasse')}
                  THEN 'Empresa de TI' ELSE 'Fora do setor de TI' END AS setor,
             upper(split_part(municipio_descricao, '-', 1)) AS regiao
-        FROM read_parquet('s3://{BUCKET_SILVER_TI}/rais_vinc/ano_particao={ano}/**/*.parquet')
+        FROM read_parquet('{nuvem.glob_silver_ti('rais_vinc', f'ano_particao={ano}/**/*.parquet')}')
         WHERE {ATIVO}
           AND {esc.sql_filtro_cbo('cbo_ocupacao_2002')}
           AND vl_remun_media_sm > 0 AND vl_remun_media_sm <= {TETO_SM}
@@ -290,7 +291,7 @@ def main() -> int:
             print("\n❌ nada decomposto.")
             return 1
         con.register("hiato", tabela)
-        destino = f"s3://{BUCKET_GOLD}/hiato_serie.parquet"
+        destino = nuvem.caminho_gold("hiato_serie")
         con.execute(f"""
             COPY (SELECT * FROM hiato) TO '{destino}' (
                 FORMAT PARQUET,

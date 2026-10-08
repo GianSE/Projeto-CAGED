@@ -132,13 +132,22 @@ def main() -> int:
     print(f"  PUBLICANDO A GOLD -> {args.repo}")
     print("=" * 72)
 
-    if DIR_LOCAL.exists():
-        shutil.rmtree(DIR_LOCAL)
-    DIR_LOCAL.mkdir(parents=True, exist_ok=True)
+    from extracao_ftp import nuvem
+
+    if nuvem.MODO_NUVEM:
+        # Sem MinIO: os construtores (gold_rais.construir_gold,
+        # gold_unificado.mapa, ciencia_dados.*) já gravaram direto em
+        # DIR_LOCAL — NÃO apaga a pasta, só garante que existe e soma o
+        # README por cima.
+        DIR_LOCAL.mkdir(parents=True, exist_ok=True)
+    else:
+        if DIR_LOCAL.exists():
+            shutil.rmtree(DIR_LOCAL)
+        DIR_LOCAL.mkdir(parents=True, exist_ok=True)
     (DIR_LOCAL / "README.md").write_text(
         CARTAO.replace("{repo}", args.repo), encoding="utf-8")
 
-    if not args.so_card:
+    if not args.so_card and not nuvem.MODO_NUVEM:
         fs = _fs()
         arquivos = sorted(fs.glob(f"{BUCKET_GOLD}/*.parquet"))
         if not arquivos:
@@ -152,6 +161,13 @@ def main() -> int:
             total += destino.stat().st_size
             print(f"   📥 {nome:<36} {destino.stat().st_size / 1024:>8,.0f} KB")
         print(f"\n   {len(arquivos)} tabela(s), {total / 1e6:.1f} MB")
+    elif nuvem.MODO_NUVEM and not args.so_card:
+        arquivos = sorted(DIR_LOCAL.glob("*.parquet"))
+        if not arquivos:
+            print("❌ Nenhuma tabela em publicacao/gold/. Rode os construtores antes.")
+            return 1
+        total = sum(a.stat().st_size for a in arquivos)
+        print(f"   {len(arquivos)} tabela(s) já locais, {total / 1e6:.1f} MB")
 
     api.upload_folder(folder_path=str(DIR_LOCAL), repo_id=args.repo,
                       repo_type="dataset")

@@ -74,16 +74,27 @@ class ItemTrabalho:
     parcial: bool = False  # veio de uma pasta "AAAA Parcial"
 
     @property
-    def destino_s3(self) -> str:
-        """Caminho final no MinIO, particionado no padrão Hive."""
+    def destino_rel(self) -> str:
+        """
+        Caminho particionado no padrão Hive, SEM o prefixo do bucket/repo —
+        o mesmo caminho relativo serve de chave tanto no MinIO (atrás de
+        `s3://{bucket}/`) quanto no repositório do Hugging Face no modo
+        nuvem (ver extracao_ftp/nuvem.py), para que os dois modos apontem
+        sempre para o mesmo arquivo lógico.
+        """
         sufixo_ano = f"{self.ano}_parcial" if self.parcial else str(self.ano)
-        base = f"s3://{BUCKET_BRONZE}/{self.tabela}/ano={sufixo_ano}"
+        base = f"{self.tabela}/ano={sufixo_ano}"
 
         if self.mes is not None:
             return f"{base}/mes={self.mes}/{self.tabela}_{self.ano}{self.mes:02d}.parquet"
         if self.recorte:
             return f"{base}/{self.tabela}_{self.recorte}.parquet"
         return f"{base}/{self.tabela}_{self.ano}.parquet"
+
+    @property
+    def destino_s3(self) -> str:
+        """Caminho final no MinIO, particionado no padrão Hive."""
+        return f"s3://{BUCKET_BRONZE}/{self.destino_rel}"
 
     @property
     def rotulo(self) -> str:

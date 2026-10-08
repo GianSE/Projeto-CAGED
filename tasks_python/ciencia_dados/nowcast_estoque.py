@@ -52,13 +52,14 @@ import numpy as np
 import pandas as pd
 
 from ciencia_dados import serie as sr
+from extracao_ftp import nuvem
 from extracao_ftp.config_extracao import BUCKET_GOLD, conectar_duckdb
 
 warnings.simplefilter("ignore")
 
 SQL_ESTOQUE = f"""
 SELECT ano, sum(estoque_3112) AS estoque
-FROM read_parquet('s3://{BUCKET_GOLD}/rais_estoque_anual.parquet')
+FROM read_parquet('{nuvem.caminho_gold('rais_estoque_anual')}')
 WHERE setor_ti OR ocupacao_ti
 GROUP BY 1 ORDER BY 1
 """

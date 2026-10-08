@@ -25,6 +25,7 @@ se acreditar nele. `diagnostico()` faz esse teste.
 """
 import pandas as pd
 
+from extracao_ftp import nuvem
 from extracao_ftp.config_extracao import BUCKET_SILVER_TI, conectar_duckdb
 
 INICIO_NOVO_CAGED = pd.Timestamp("2020-01-01")
@@ -33,11 +34,11 @@ SQL = f"""
 WITH uniao AS (
     SELECT competenciamov_data AS competencia,
            saldomovimentacao   AS saldo
-    FROM read_parquet('s3://{BUCKET_SILVER_TI}/caged_mov/**/*.parquet',
+    FROM read_parquet('{nuvem.glob_silver_ti('caged_mov')}',
                       hive_partitioning=true)
     UNION ALL
     SELECT competencia_declarada_data, saldo_mov
-    FROM read_parquet('s3://{BUCKET_SILVER_TI}/caged_old/**/*.parquet',
+    FROM read_parquet('{nuvem.glob_silver_ti('caged_old')}',
                       hive_partitioning=true)
 )
 SELECT date_trunc('month', competencia)          AS mes,
