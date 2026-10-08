@@ -5,6 +5,9 @@ on:
     # Toda segunda, 06:00 UTC — o CAGED sai mensalmente, a RAIS anualmente;
     # semanal é frequente o bastante sem martelar o FTP do governo.
     - cron: "0 6 * * 1"
+  push:
+    paths:
+      - ".github/workflows/pipeline-nuvem.yml"
   workflow_dispatch:
     inputs:
       ano_inicio:
