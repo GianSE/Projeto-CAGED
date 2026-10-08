@@ -169,7 +169,8 @@ def classificar(nome: str, caminho_remoto: str, ano_pasta: int | None,
 
 def _varrer(cliente: ClienteFTP, caminho: str, ano_pasta: int | None,
             dataset: str, parcial: bool, profundidade: int,
-            itens: list[ItemTrabalho], ignorados: list[str]) -> None:
+            itens: list[ItemTrabalho], ignorados: list[str],
+            ano_min: int = 0, ano_max: int = 9999) -> None:
     """Percorre recursivamente um diretório do FTP acumulando itens."""
     if profundidade < 0:
         return
@@ -198,6 +199,13 @@ def _varrer(cliente: ClienteFTP, caminho: str, ano_pasta: int | None,
 
         ano_desta_pasta = _ano_da_pasta(nome)
         if ano_desta_pasta is not None:
+            # Fora do intervalo pedido: não desce. Só funciona porque é
+            # inequívoco (nome da pasta tem o ano) — quando o ano vem só do
+            # ARQUIVO (não da pasta), isso nunca entra aqui, e o filtro final
+            # em descobrir() continua sendo quem decide (ver a ressalva no
+            # docstring de descobrir: "pelo ano-base do dado, não da pasta").
+            if ano_desta_pasta < ano_min or ano_desta_pasta > ano_max:
+                continue
             # Só ao ENTRAR numa pasta de ano, não a cada subpasta (região,
             # mês) — dá progresso visível sem inundar o log do CI.
             print(f"      📅 {dataset}: {ano_desta_pasta}"
@@ -205,7 +213,7 @@ def _varrer(cliente: ClienteFTP, caminho: str, ano_pasta: int | None,
         novo_ano = ano_desta_pasta or ano_pasta
         nova_parcial = parcial or ("parcial" in nome.lower())
         _varrer(cliente, completo, novo_ano, dataset, nova_parcial,
-                profundidade - 1, itens, ignorados)
+                profundidade - 1, itens, ignorados, ano_min, ano_max)
 
 
 def descobrir(cliente: ClienteFTP, datasets: list[str], ano_min: int, ano_max: int,
@@ -230,7 +238,7 @@ def descobrir(cliente: ClienteFTP, datasets: list[str], ano_min: int, ano_max: i
         antes = len(itens)
         titulo = f"🔎 Varrendo {dataset}  ({raiz})"
         print(f"::group::{titulo}" if em_actions else f"\n{titulo}")
-        _varrer(cliente, raiz, None, dataset, False, 3, itens, ignorados)
+        _varrer(cliente, raiz, None, dataset, False, 3, itens, ignorados, ano_min, ano_max)
         if em_actions:
             print("::endgroup::")
         # Fora do grupo (recolhido): visível sem precisar expandir.
