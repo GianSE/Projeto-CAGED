@@ -15,11 +15,12 @@ on:
         default: "1985"
       ano_fim:
         description: "Forçar varredura até este ano"
-        default: "9999"
+        default: "2030"
 
 env:
   MODO_NUVEM: "1"
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  PYTHONUNBUFFERED: "1" # sem isso o print() só aparece em lotes, não em tempo real
 
 jobs:
   verificar:

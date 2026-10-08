@@ -36,7 +36,7 @@ def _argumentos():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dataset", nargs="+", choices=DATASETS, default=list(DATASETS))
     p.add_argument("--ano-inicio", type=int, default=1985)
-    p.add_argument("--ano-fim", type=int, default=9999)
+    p.add_argument("--ano-fim", type=int, default=2030)  # mesmo padrão de run_extracao.py
     return p.parse_args()
 
 
