@@ -78,7 +78,17 @@ class EstadoLake:
             # grande é quebrado em _parteNN só na publicação pro Hub (ver
             # caminhos_fonte_ingeridos) — o nome de destino nunca existe
             # sozinho para esses casos.
-            return item.caminho_remoto in nuvem.caminhos_fonte_ingeridos(item.tabela, item.ano)
+            try:
+                fontes = nuvem.caminhos_fonte_ingeridos(item.tabela, item.ano)
+            except Exception as e:
+                # A consulta falhou de verdade (não "vazio") — assume que
+                # JÁ EXISTE. Pular um item que precisava reprocessar é
+                # barato (a próxima verificação pega de novo); reprocessar
+                # ou duplicar um item que já existia não é.
+                print(f"⚠️  não consegui confirmar {item.rotulo}, assumindo que já "
+                      f"existe (mais seguro que reprocessar à toa): {e}")
+                return True
+            return item.caminho_remoto in fontes
         bucket, chave = self._partes(item.destino_s3)
         try:
             self.s3.head_object(Bucket=bucket, Key=chave)

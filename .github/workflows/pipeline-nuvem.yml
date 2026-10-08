@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
     inputs:
       ano_inicio:
-        description: "Forçar varredura a partir deste ano (padrão: 1985, tudo)"
-        default: "1985"
+        description: "Forçar varredura a partir deste ano (padrão: 2007 — CNAE 2.0/CBO atual)"
+        default: "2007"
       ano_fim:
         description: "Forçar varredura até este ano"
         default: "2030"
@@ -50,7 +50,7 @@ jobs:
         working-directory: tasks_python
         run: >
           python -m extracao_ftp.verificar_novidades
-          --ano-inicio "${{ github.event.inputs.ano_inicio || '1985' }}"
+          --ano-inicio "${{ github.event.inputs.ano_inicio || '2007' }}"
           --ano-fim "${{ github.event.inputs.ano_fim || '9999' }}"
 
       - name: Notifica no Telegram (resultado da verificação)

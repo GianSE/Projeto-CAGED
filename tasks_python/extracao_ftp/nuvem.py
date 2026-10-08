@@ -111,21 +111,42 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
     if chave in _cache_fontes:
         return _cache_fontes[chave]
 
+    import time
     import duckdb
 
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs; SET enable_progress_bar=false;")
     # "ano={ano}*" casa tanto ano=2022 quanto ano=2022_parcial.
     origem = glob_bronze(tabela, f"ano={ano}*/**/*.parquet")
-    try:
-        linhas = con.execute(
-            f"SELECT DISTINCT caminho_fonte FROM read_parquet('{origem}', union_by_name=true)"
-        ).fetchall()
-        fontes = {r[0] for r in linhas if r[0]}
-    except Exception:
-        fontes = set()  # ano ainda sem nenhum arquivo publicado
-    _cache_fontes[chave] = fontes
-    return fontes
+
+    erro_final = None
+    for tentativa in range(3):
+        try:
+            linhas = con.execute(
+                f"SELECT DISTINCT caminho_fonte FROM read_parquet('{origem}', union_by_name=true)"
+            ).fetchall()
+            fontes = {r[0] for r in linhas if r[0]}
+            _cache_fontes[chave] = fontes
+            return fontes
+        except Exception as e:
+            # "No files found" é uma resposta válida (o ano não tem NENHUM
+            # arquivo publicado ainda) — qualquer outro erro (rede, timeout,
+            # limite de taxa do Hub) é transitório e vale tentar de novo.
+            if "No files found" in str(e):
+                _cache_fontes[chave] = set()
+                return set()
+            erro_final = e
+            if tentativa < 2:
+                time.sleep(2 * (tentativa + 1))
+
+    # As 3 tentativas falharam por erro de verdade (não "vazio"). Levanta
+    # em vez de devolver set() — um set() vazio aqui seria lido como "nada
+    # publicado ainda" e reprocessaria à toa (ou pior, duplicaria dado já
+    # publicado). Quem chama decide o que fazer com a incerteza.
+    raise RuntimeError(
+        f"não consegui consultar caminho_fonte de {tabela} (ano {ano}) "
+        f"depois de 3 tentativas: {erro_final}"
+    )
 
 
 def publicar_arquivo(local: Path, repo: str, caminho_repo: str, privado: bool = False) -> None:
