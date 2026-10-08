@@ -28,6 +28,18 @@ jobs:
       tem_novidade: ${{ steps.chk.outputs.tem_novidade }}
       anos: ${{ steps.chk.outputs.anos }}
     steps:
+      - name: Recursos do runner (CPU, RAM, disco) — só para acompanhar se variam entre execuções
+        run: |
+          echo "--- CPU ---"
+          nproc --all
+          lscpu | grep -E "Model name|^CPU\(s\)"
+          echo "--- RAM ---"
+          free -h
+          echo "--- Disco ---"
+          df -h /
+          echo "--- runner-image ---"
+          cat /etc/os-release | grep -E "^NAME|^VERSION="
+
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -39,6 +51,24 @@ jobs:
           python -m extracao_ftp.verificar_novidades
           --ano-inicio "${{ github.event.inputs.ano_inicio || '1985' }}"
           --ano-fim "${{ github.event.inputs.ano_fim || '9999' }}"
+
+      - name: Notifica no Telegram (resultado da verificação)
+        if: always()
+        run: |
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "${{ job.status }}" != "success" ]; then
+            MSG="❌ *Pipeline CAGED/RAIS*: falha ao verificar o FTP.
+          $LINK"
+          elif [ "${{ steps.chk.outputs.tem_novidade }}" = "true" ]; then
+            MSG="🔎 *Pipeline CAGED/RAIS*: encontrou novidade no FTP, processando agora.
+          $LINK"
+          else
+            MSG="🔎 *Pipeline CAGED/RAIS*: verificado, sem novidade. Nada a processar."
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            --data-urlencode text="$MSG" > /dev/null
 
   processar:
     needs: verificar
@@ -122,3 +152,19 @@ jobs:
         run: |
           python -m gold_caged.publicar_hf
           python -m gold_unificado.publicar_gold
+
+      - name: Notifica no Telegram (relatório final do pipeline)
+        if: always()
+        run: |
+          N_ITENS=$(echo '${{ needs.verificar.outputs.anos }}' | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ICONE="🏁"; [ "${{ job.status }}" != "success" ] && ICONE="⚠️"
+          MSG="$ICONE *Pipeline CAGED/RAIS concluído*
+          Verificação: ${{ needs.verificar.result }}
+          Processamento: ${{ needs.processar.result }} ($N_ITENS item(ns))
+          Gold/publicação: ${{ job.status }}
+          $LINK"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            --data-urlencode text="$MSG" > /dev/null

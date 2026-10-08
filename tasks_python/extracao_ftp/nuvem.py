@@ -86,6 +86,48 @@ def existe_remoto(repo: str, caminho: str) -> bool:
         return False
 
 
+_cache_fontes: dict[tuple, set] = {}
+
+
+def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
+    """
+    Caminhos do FTP (`caminho_fonte`, coluna gravada em toda linha da
+    bronze) já representados no repositório de bronze PARA ESTE ANO — NÃO
+    pelo nome do arquivo de destino, e NÃO a tabela inteira.
+
+    Por quê caminho_fonte, não nome de arquivo: `publicar_bronze.py` quebra
+    arquivo grande em `_parteNN` só para caber melhor no Hub — o MinIO tem
+    um arquivo só, o Hub pode ter vários. Checar pelo NOME esperado
+    (`item.destino_rel`) dá falso "faltando" para toda região grande da
+    RAIS, porque esse nome nunca existiu no Hub — só os pedaços (mesma
+    lição de auditoria.consistencia: completude por `caminho_fonte`).
+
+    Por quê por ANO, não a tabela inteira: a primeira versão lia a tabela
+    inteira para checar UM ano — no rais_vinc (30+ GB, ~19 anos) isso
+    custava minutos por item verificado. Restringir ao glob do ano cai pro
+    tamanho de UM ano, que é o que a decisão realmente precisa.
+    """
+    chave = (tabela, ano)
+    if chave in _cache_fontes:
+        return _cache_fontes[chave]
+
+    import duckdb
+
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs; LOAD httpfs; SET enable_progress_bar=false;")
+    # "ano={ano}*" casa tanto ano=2022 quanto ano=2022_parcial.
+    origem = glob_bronze(tabela, f"ano={ano}*/**/*.parquet")
+    try:
+        linhas = con.execute(
+            f"SELECT DISTINCT caminho_fonte FROM read_parquet('{origem}', union_by_name=true)"
+        ).fetchall()
+        fontes = {r[0] for r in linhas if r[0]}
+    except Exception:
+        fontes = set()  # ano ainda sem nenhum arquivo publicado
+    _cache_fontes[chave] = fontes
+    return fontes
+
+
 def publicar_arquivo(local: Path, repo: str, caminho_repo: str, privado: bool = False) -> None:
     from huggingface_hub import HfApi
 

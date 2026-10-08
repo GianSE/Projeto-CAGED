@@ -74,7 +74,11 @@ class EstadoLake:
         if self.nuvem:
             from extracao_ftp import nuvem
 
-            return nuvem.existe_remoto(nuvem.repo_bronze(item.tabela), item.destino_rel)
+            # Por caminho_fonte, não pelo nome esperado do destino: arquivo
+            # grande é quebrado em _parteNN só na publicação pro Hub (ver
+            # caminhos_fonte_ingeridos) — o nome de destino nunca existe
+            # sozinho para esses casos.
+            return item.caminho_remoto in nuvem.caminhos_fonte_ingeridos(item.tabela, item.ano)
         bucket, chave = self._partes(item.destino_s3)
         try:
             self.s3.head_object(Bucket=bucket, Key=chave)
