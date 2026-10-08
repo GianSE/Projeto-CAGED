@@ -326,7 +326,8 @@ def iniciar_manutencao(job: str, tabela: list[str] | None = None,
         comando += ["--tabela", *tabela]
     # `consistencia` audita a camada inteira e não aceita recorte por ano;
     # passar a faixa quebraria o job em vez de restringi-lo.
-    if job in ("harmonizar",) and (ano_inicio or ano_fim != 9999):
+    if job in ("harmonizar", "consolidar", "unificar", "publicar-consolidados") \
+            and (ano_inicio or ano_fim != 9999):
         comando += ["--ano-inicio", str(ano_inicio), "--ano-fim", str(ano_fim)]
     if so_listar and job in ("tipar", "reparticionar", "podar"):
         comando.append("--so-listar")

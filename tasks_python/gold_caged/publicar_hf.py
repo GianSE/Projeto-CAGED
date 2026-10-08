@@ -22,6 +22,7 @@ Ao final ele imprime a variável DADOS_URL_BASE para configurar no deploy.
 """
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -117,21 +118,42 @@ DESCRICAO_TABELA = {
     "caged_exc": "Exclusões de movimentações (Novo CAGED)",
     "caged_old": "CAGED antigo — CAGEDEST (2007–2019)",
     "caged_ajustes": "Ajustes/declarações fora do prazo (CAGED antigo)",
+    "caged_ti": "As duas gerações harmonizadas num esquema só",
 }
+
+# "caged_mov_2024.parquet" -> ("caged_mov", 2024). Um arquivo por ano (ver
+# gold_caged/consolidar.py e gold_caged/unificar.py) — o nome é o contrato
+# que o dashboard lê de volta em dashboard/dados.py.
+PADRAO_ANO = re.compile(r"^(.+)_(\d{4})\.parquet$")
+
+# Nomes do formato antigo (um arquivo por tabela, sem ano) — ver --limpar-legado.
+LEGADO = {f"{t}.parquet" for t in (*DESCRICAO_TABELA, "caged_ti")}
 
 
 def _tabela_de_arquivos(arquivos: list[Path]) -> str:
     """
-    Monta a tabela do card a partir do que está REALMENTE sendo publicado.
-
-    Fixar a lista no texto faria o card prometer arquivos ausentes numa
-    publicação parcial — e a publicação é parcial por natureza enquanto a
-    silver de alguma tabela ainda está sendo construída.
+    Monta a tabela do card por TABELA (um intervalo de anos cada), a partir
+    do que está REALMENTE sendo publicado — fixar a lista no texto faria o
+    card prometer arquivos ausentes numa publicação parcial.
     """
-    linhas = ["| Arquivo | Conteúdo | Tamanho |", "|---|---|---|"]
+    por_tabela: dict[str, list[int]] = {}
+    tamanho: dict[str, int] = {}
     for a in arquivos:
-        descricao = DESCRICAO_TABELA.get(a.stem, "—")
-        linhas.append(f"| `{a.name}` | {descricao} | {a.stat().st_size / 1e6:.1f} MB |")
+        m = PADRAO_ANO.match(a.name)
+        if not m:
+            continue
+        tabela, ano = m.group(1), int(m.group(2))
+        por_tabela.setdefault(tabela, []).append(ano)
+        tamanho[tabela] = tamanho.get(tabela, 0) + a.stat().st_size
+
+    linhas = ["| Tabela | Conteúdo | Anos | Arquivos | Tamanho |", "|---|---|---|---|---|"]
+    for tabela, anos in sorted(por_tabela.items()):
+        descricao = DESCRICAO_TABELA.get(tabela, "—")
+        anos.sort()
+        linhas.append(
+            f"| `{tabela}_<ano>.parquet` | {descricao} | {anos[0]}–{anos[-1]} | "
+            f"{len(anos)} | {tamanho[tabela] / 1e6:.1f} MB |"
+        )
     return "\n".join(linhas)
 
 
@@ -145,6 +167,30 @@ def _tem_login_cli() -> bool:
         return False
 
 
+def limpar_legado(api, repo: str) -> int:
+    """
+    Remove os arquivos do formato antigo (um por tabela, sem ano) que o
+    esquema por ano substitui. Lista fixa e pequena — nunca toca nos
+    arquivos "<tabela>_<ano>.parquet" nem na mirror da silver que convive no
+    mesmo repositório (ver silver_caged/publicar_hf.py).
+    """
+    from huggingface_hub import CommitOperationDelete
+
+    remotos = set(api.list_repo_files(repo, repo_type="dataset"))
+    sobrando = sorted(LEGADO & remotos)
+    if not sobrando:
+        print("   ✅ nada do formato antigo para remover")
+        return 0
+
+    print(f"   🗑️  removendo {len(sobrando)} arquivo(s) do formato antigo: {sobrando}")
+    api.create_commit(
+        repo_id=repo, repo_type="dataset",
+        operations=[CommitOperationDelete(path_in_repo=f) for f in sobrando],
+        commit_message="Remove arquivos consolidados do formato antigo (substituidos por ano)",
+    )
+    return len(sobrando)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Publica os parquets no Hugging Face.")
     # Com padrão, e não obrigatório: os arquivos consolidados pertencem ao mesmo
@@ -154,6 +200,12 @@ def main() -> int:
                    help="Destino no formato usuario/nome-do-dataset")
     p.add_argument("--privado", action="store_true",
                    help="Cria o dataset privado (padrão: público)")
+    p.add_argument("--ano-inicio", type=int, default=0,
+                   help="Publica só os arquivos de ano >= este (padrão: todos os locais)")
+    p.add_argument("--ano-fim", type=int, default=9999,
+                   help="Publica só os arquivos de ano <= este (padrão: todos os locais)")
+    p.add_argument("--limpar-legado", action="store_true",
+                   help="Remove do repositorio os arquivos do formato antigo (um por tabela, sem ano)")
     args = p.parse_args()
 
     # Três origens aceitas, da mais segura para a mais prática:
@@ -178,10 +230,14 @@ def main() -> int:
         print("\n   Crie o token em https://huggingface.co/settings/tokens (papel: write)")
         return 1
 
-    arquivos = sorted(DIR_DETALHADO.glob("*.parquet"))
+    def _no_recorte(a: Path) -> bool:
+        m = PADRAO_ANO.match(a.name)
+        return bool(m) and args.ano_inicio <= int(m.group(2)) <= args.ano_fim
+
+    arquivos = sorted(a for a in DIR_DETALHADO.glob("*.parquet") if _no_recorte(a))
     if not arquivos:
-        print(f"❌ Nenhum parquet em {DIR_DETALHADO}.")
-        print("   Rode antes: python -m gold_caged.consolidar")
+        print(f"❌ Nenhum parquet em {DIR_DETALHADO} no recorte pedido.")
+        print("   Rode antes: python -m gold_caged.consolidar  (e gold_caged.unificar)")
         return 1
 
     from huggingface_hub import HfApi
@@ -191,6 +247,9 @@ def main() -> int:
 
     api.create_repo(repo_id=args.repo, repo_type="dataset",
                     private=args.privado, exist_ok=True)
+
+    if args.limpar_legado:
+        limpar_legado(api, args.repo)
 
     # O card vai junto: é ele que documenta o recorte metodológico para quem
     # baixar os dados sem ter lido o trabalho.

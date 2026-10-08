@@ -16,7 +16,9 @@ Se a silver voltar a crescer muito (mercado completo, ou RAIS inteira), o
 caminho é reintroduzir a gold: as consultas daqui viram os agregados de lá
 praticamente sem alteração.
 """
+import functools
 import os
+import re
 from pathlib import Path
 
 import duckdb
@@ -33,21 +35,61 @@ from extracao_ftp.config_extracao import (
 from gold_unificado.dicionario_canonico import sql_canonico
 
 # Origem dos dados detalhados, resolvida por ambiente:
-#   DADOS_URL_BASE definido  -> parquet consolidado servido por HTTPS
-#                               (Supabase Storage, R2, HF — o que estiver
-#                               publicado). O DuckDB usa range request e baixa
-#                               só os row groups que a consulta precisa.
+#   DADOS_URL_BASE definido  -> gold publicada por HTTPS (ver
+#                               gold_caged/consolidar.py). Partida por ano:
+#                               cada tabela é uma lista de arquivos
+#                               "<tabela>_<ano>.parquet", um por ano, para
+#                               corrigir ou publicar um ano sem reescrever a
+#                               série inteira. O DuckDB usa range request em
+#                               cada arquivo e baixa só os row groups que a
+#                               consulta precisa.
 #   sem a variável           -> silver particionada no MinIO local
 #
 # O glob (**/*.parquet) só existe no caminho local: sobre HTTPS não há
-# listagem de diretório, por isso a versão publicada é UM arquivo por tabela
-# (ver gold_caged/consolidar.py).
+# listagem de diretório. Para a publicada, a lista de arquivos vem da API do
+# Hub (metadado, uma chamada só, cacheada) — não de um glob.
 URL_BASE = os.getenv("DADOS_URL_BASE", "").rstrip("/")
 
 
+def _repo_hf() -> str | None:
+    m = re.match(r"https://huggingface\.co/datasets/([^/]+/[^/]+)/resolve/",
+                 URL_BASE + "/")
+    return m.group(1) if m else None
+
+
+@functools.lru_cache(maxsize=1)
+def _arquivos_publicados() -> dict:
+    """
+    Arquivos do dataset publicado, agrupados por tabela base (sem o
+    "_<ano>"). Uma chamada de API só, para todas as tabelas de uma vez —
+    é metadado, não download.
+    """
+    repo = _repo_hf()
+    agrupado: dict[str, list[str]] = {}
+    if not repo:
+        return agrupado
+    from huggingface_hub import HfApi
+
+    for nome in HfApi().list_repo_files(repo, repo_type="dataset"):
+        m = re.match(r"^(.+)_(\d{4})\.parquet$", nome)
+        if m:
+            agrupado.setdefault(m.group(1), []).append(nome)
+    return agrupado
+
+
 def _caminho(tabela: str) -> str:
-    return (f"{URL_BASE}/{tabela}.parquet" if URL_BASE
-            else f"s3://{BUCKET_SILVER_TI}/{tabela}/**/*.parquet")
+    """
+    Expressão DuckDB pronta para embutir em read_parquet(...), SEM aspas
+    adicionais no chamador: local é uma string com glob, publicada é uma
+    lista de arquivos (um por ano) — sintaxes diferentes de propósito.
+    """
+    if not URL_BASE:
+        return f"'s3://{BUCKET_SILVER_TI}/{tabela}/**/*.parquet'"
+    arquivos = _arquivos_publicados().get(tabela, [])
+    if not arquivos:
+        return f"'{URL_BASE}/{tabela}.parquet'"  # formato antigo (um arquivo só), se existir
+    urls = ", ".join(f"'{URL_BASE}/{a}'" for a in sorted(arquivos))
+    return f"[{urls}]"
 
 
 FONTE = _caminho("caged_mov")
@@ -74,7 +116,7 @@ FONTE_UNIFICADA = f"""
            {sql_canonico("escolaridade", "graudeinstrucao_descricao")} AS escolaridade_descricao,
            saldomovimentacao AS saldo_mov, salario AS salario_valor, idade,
            ano_particao, 'Novo CAGED' AS geracao
-    FROM read_parquet('{_caminho("caged_mov")}')
+    FROM read_parquet({_caminho("caged_mov")})
     UNION ALL
     SELECT competencia_declarada_data, uf_descricao, municipio_descricao,
            cbo_2002_ocupacao_descricao,
@@ -83,7 +125,7 @@ FONTE_UNIFICADA = f"""
            {sql_canonico("escolaridade", "grau_instrucao_descricao")},
            saldo_mov, salario_mensal, idade,
            ano_particao, 'CAGED antigo'
-    FROM read_parquet('{_caminho("caged_old")}')
+    FROM read_parquet({_caminho("caged_old")})
 """
 
 # saldomovimentacao vale +1 na admissão e -1 no desligamento: é a definição
@@ -142,7 +184,7 @@ def _modo_publicado() -> bool:
     cai para eles: o app continua de pé, só com as dimensões pré-calculadas.
     """
     try:
-        conectar().execute(f"SELECT 1 FROM read_parquet('{FONTE}') LIMIT 1").fetchone()
+        conectar().execute(f"SELECT 1 FROM read_parquet({FONTE}) LIMIT 1").fetchone()
         return False
     except Exception:
         return DIR_PUBLICADO.exists()
@@ -168,7 +210,7 @@ def _publicado(nome: str) -> pd.DataFrame:
 def tem_dados() -> bool:
     if _modo_publicado():
         return not _publicado("mensal").empty
-    df = _consultar(f"SELECT count(*) AS n FROM read_parquet('{FONTE}')")
+    df = _consultar(f"SELECT count(*) AS n FROM read_parquet({FONTE})")
     return not df.empty and df["n"].iloc[0] > 0
 
 
@@ -194,7 +236,7 @@ def _sql_lentes() -> str:
                END AS categoria,
                secao_descricao AS setor_empresa,
                {METRICAS}
-        FROM read_parquet('{FONTE}')
+        FROM read_parquet({FONTE})
         GROUP BY 1, 2, 3 ORDER BY 1
     """
 
@@ -206,24 +248,24 @@ def _sql(nome: str) -> str:
     return {
         "mensal": f"""
             SELECT competenciamov_data AS competencia, {METRICAS}
-            FROM read_parquet('{FONTE}')
+            FROM read_parquet({FONTE})
             WHERE competenciamov_data IS NOT NULL GROUP BY 1 ORDER BY 1
         """,
         "mensal_uf": f"""
             SELECT competenciamov_data AS competencia, uf_descricao AS uf,
                    regiao_descricao AS regiao, {METRICAS}
-            FROM read_parquet('{FONTE}')
+            FROM read_parquet({FONTE})
             WHERE competenciamov_data IS NOT NULL AND uf_descricao IS NOT NULL
             GROUP BY 1, 2, 3 ORDER BY 1
         """,
         "setor": f"""
             SELECT ano_particao AS ano, secao_descricao AS setor, {METRICAS}
-            FROM read_parquet('{FONTE}')
+            FROM read_parquet({FONTE})
             WHERE secao_descricao IS NOT NULL GROUP BY 1, 2 ORDER BY 1
         """,
         "ocupacao": f"""
             SELECT ano_particao AS ano, cbo2002ocupacao_descricao AS ocupacao, {METRICAS}
-            FROM read_parquet('{FONTE}')
+            FROM read_parquet({FONTE})
             WHERE cbo2002ocupacao_descricao IS NOT NULL
             GROUP BY 1, 2 HAVING count(*) >= 50 ORDER BY 1
         """,
@@ -231,7 +273,7 @@ def _sql(nome: str) -> str:
             SELECT ano_particao AS ano, {sql_canonico("sexo", "sexo_descricao")} AS sexo,
                    {sql_canonico("raca_cor", "racacor_descricao")} AS raca_cor,
                    {sql_canonico("escolaridade", "graudeinstrucao_descricao")} AS escolaridade, {METRICAS}
-            FROM read_parquet('{FONTE}') GROUP BY 1, 2, 3, 4 ORDER BY 1
+            FROM read_parquet({FONTE}) GROUP BY 1, 2, 3, 4 ORDER BY 1
         """,
         "lentes": _sql_lentes(),
     }[nome]
@@ -283,7 +325,7 @@ METRICAS_UNI = """
 def tem_serie_longa() -> bool:
     """A série de 20 anos depende do arquivo unificado estar publicado."""
     try:
-        conectar().execute(f"SELECT 1 FROM read_parquet('{FONTE_UNIF}') LIMIT 1").fetchone()
+        conectar().execute(f"SELECT 1 FROM read_parquet({FONTE_UNIF}) LIMIT 1").fetchone()
         return True
     except Exception:
         return False
@@ -293,7 +335,7 @@ def serie_longa_anual() -> pd.DataFrame:
     """Agregado anual 2007–2026 — o esqueleto da narrativa histórica."""
     return _consultar(f"""
         SELECT ano, geracao, {METRICAS_UNI}
-        FROM read_parquet('{FONTE_UNIF}')
+        FROM read_parquet({FONTE_UNIF})
         GROUP BY 1, 2 ORDER BY 1
     """)
 
@@ -301,7 +343,7 @@ def serie_longa_anual() -> pd.DataFrame:
 def serie_longa_mensal() -> pd.DataFrame:
     return _consultar(f"""
         SELECT competencia, {METRICAS_UNI}
-        FROM read_parquet('{FONTE_UNIF}')
+        FROM read_parquet({FONTE_UNIF})
         WHERE competencia IS NOT NULL GROUP BY 1 ORDER BY 1
     """)
 
@@ -311,7 +353,7 @@ def setor_longo() -> pd.DataFrame:
     é derivada do CNAE 2.0 (ver gold_caged/cnae_secao.py)."""
     return _consultar(f"""
         SELECT ano, setor, {METRICAS_UNI}
-        FROM read_parquet('{FONTE_UNIF}')
+        FROM read_parquet({FONTE_UNIF})
         WHERE setor IS NOT NULL GROUP BY 1, 2 ORDER BY 1
     """)
 
@@ -319,7 +361,7 @@ def setor_longo() -> pd.DataFrame:
 def uf_longo() -> pd.DataFrame:
     return _consultar(f"""
         SELECT ano, uf, {METRICAS_UNI}
-        FROM read_parquet('{FONTE_UNIF}')
+        FROM read_parquet({FONTE_UNIF})
         WHERE uf IS NOT NULL GROUP BY 1, 2 ORDER BY 1
     """)
 
@@ -327,7 +369,7 @@ def uf_longo() -> pd.DataFrame:
 def ocupacao_longa() -> pd.DataFrame:
     return _consultar(f"""
         SELECT ano, ocupacao, {METRICAS_UNI}
-        FROM read_parquet('{FONTE_UNIF}')
+        FROM read_parquet({FONTE_UNIF})
         WHERE ocupacao IS NOT NULL
         GROUP BY 1, 2 HAVING count(*) >= 50 ORDER BY 1
     """)
@@ -336,7 +378,7 @@ def ocupacao_longa() -> pd.DataFrame:
 def demografia_longa() -> pd.DataFrame:
     return _consultar(f"""
         SELECT ano, sexo, raca_cor, escolaridade, {METRICAS_UNI}
-        FROM read_parquet('{FONTE_UNIF}')
+        FROM read_parquet({FONTE_UNIF})
         GROUP BY 1, 2, 3, 4 ORDER BY 1
     """)
 
