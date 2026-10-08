@@ -14,6 +14,7 @@ porque o layout do FTP muda entre eras:
   RAIS/{ano}/RAIS_VINC_PUB_{REGIAO}.7z + RAIS_ESTAB_PUB.7z     2018 -> hoje
   RAIS/{ano}/{UF}{ano}.7z + ESTB{ano}.7z                       1985 -> 2017
 """
+import os
 import re
 from dataclasses import dataclass
 
@@ -184,7 +185,7 @@ def _varrer(cliente: ClienteFTP, caminho: str, ano_pasta: int | None,
             else:
                 item.tamanho = cliente.tamanho(completo)
                 itens.append(item)
-                print(f"         • {item.rotulo}  ({item.tamanho / 1e6:.1f} MB)")
+                print(f"         • [{len(itens)}] {item.rotulo}  ({item.tamanho / 1e6:.1f} MB)")
             continue
 
         # Documentação (pdf/xlsx/txt/htm) -> ignora silenciosamente
@@ -218,10 +219,22 @@ def descobrir(cliente: ClienteFTP, datasets: list[str], ano_min: int, ano_max: i
     itens: list[ItemTrabalho] = []
     ignorados: list[str] = []
 
+    # No Actions, ::group::/::endgroup:: renderiza o título como
+    # expansível/retrátil — sem isso o log de 40 anos de catálogo vira uma
+    # parede de texto. Fora do Actions essas marcações não significam nada
+    # para o terminal, então só ativa quando GITHUB_ACTIONS está definido.
+    em_actions = os.getenv("GITHUB_ACTIONS") == "true"
+
     for dataset in datasets:
         raiz = RAIZES[dataset]
-        print(f"\n🔎 Varrendo {dataset}  ({raiz})")
+        antes = len(itens)
+        titulo = f"🔎 Varrendo {dataset}  ({raiz})"
+        print(f"::group::{titulo}" if em_actions else f"\n{titulo}")
         _varrer(cliente, raiz, None, dataset, False, 3, itens, ignorados)
+        if em_actions:
+            print("::endgroup::")
+        # Fora do grupo (recolhido): visível sem precisar expandir.
+        print(f"   {dataset}: {len(itens) - antes} arquivo(s) encontrado(s)")
 
     # --- filtros ---
     filtrados = [i for i in itens if ano_min <= i.ano <= ano_max]
