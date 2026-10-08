@@ -32,3 +32,5 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python .github/scripts/teste_conectividade.py --ano ${{ matrix.ano }}
+        # HF_TOKEN cadastrado nos secrets - reroda para medir tambem a
+        # latencia de upload do runner ate o Hugging Face.
