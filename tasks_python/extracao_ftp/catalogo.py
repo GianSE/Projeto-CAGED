@@ -184,6 +184,7 @@ def _varrer(cliente: ClienteFTP, caminho: str, ano_pasta: int | None,
             else:
                 item.tamanho = cliente.tamanho(completo)
                 itens.append(item)
+                print(f"         • {item.rotulo}  ({item.tamanho / 1e6:.1f} MB)")
             continue
 
         # Documentação (pdf/xlsx/txt/htm) -> ignora silenciosamente
@@ -194,7 +195,13 @@ def _varrer(cliente: ClienteFTP, caminho: str, ano_pasta: int | None,
         if nome.strip().lower() in DIRS_IGNORADOS:
             continue
 
-        novo_ano = _ano_da_pasta(nome) or ano_pasta
+        ano_desta_pasta = _ano_da_pasta(nome)
+        if ano_desta_pasta is not None:
+            # Só ao ENTRAR numa pasta de ano, não a cada subpasta (região,
+            # mês) — dá progresso visível sem inundar o log do CI.
+            print(f"      📅 {dataset}: {ano_desta_pasta}"
+                  f"{' (parcial)' if 'parcial' in nome.lower() else ''}")
+        novo_ano = ano_desta_pasta or ano_pasta
         nova_parcial = parcial or ("parcial" in nome.lower())
         _varrer(cliente, completo, novo_ano, dataset, nova_parcial,
                 profundidade - 1, itens, ignorados)
