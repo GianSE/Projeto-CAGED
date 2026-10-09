@@ -199,19 +199,31 @@ def preparar_staging() -> None:
 
 def aplicar_secret_hf(con) -> None:
     """
-    Autentica as leituras `hf://` do DuckDB com o HF_TOKEN do ambiente.
+    Autentica as leituras `hf://` do DuckDB com o HF_TOKEN do ambiente, e
+    deixa o retry de HTTP mais paciente.
 
-    Sem isso, toda leitura `hf://` via DuckDB é ANÔNIMA — o DuckDB NÃO lê a
-    variável de ambiente HF_TOKEN sozinho (diferente da biblioteca
-    huggingface_hub em Python); ele só autentica com um SECRET explícito
-    (ver docs do httpfs: TYPE huggingface). Foi isso que causou os HTTP 429
-    de hoje mesmo rodando no Actions com HF_TOKEN configurado no ambiente —
-    o token existia, mas o DuckDB nunca foi avisado dele.
+    Autenticação: sem isso, toda leitura `hf://` via DuckDB é ANÔNIMA — o
+    DuckDB NÃO lê a variável de ambiente HF_TOKEN sozinho (diferente da
+    biblioteca huggingface_hub em Python); ele só autentica com um SECRET
+    explícito (ver docs do httpfs: TYPE huggingface). Foi isso que causou
+    os HTTP 429 de hoje mesmo rodando no Actions com HF_TOKEN configurado
+    no ambiente — o token existia, mas o DuckDB nunca foi avisado dele.
+
+    Retry: autenticar resolve a listagem/metadado, mas o DOWNLOAD do
+    arquivo em si (resolve/main/...) é outro limite de taxa, do CDN — a
+    autenticação ajuda mas não elimina (visto na prática:
+    gold_unificado.mapa bateu 429 lendo a silver mesmo autenticado). O
+    padrão do DuckDB (3 tentativas, ~2s de espera total) é curto demais
+    pra uma janela de limite de taxa que costuma levar ~1 min pra liberar.
     """
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    con.execute("SET http_retries=6;")
+    con.execute("SET http_retry_wait_ms=3000;")
+    con.execute("SET http_retry_backoff=2;")
+
     token = os.getenv("HF_TOKEN")
     if not token:
         return
-    con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute(f"""
         CREATE OR REPLACE SECRET secret_hf (
             TYPE huggingface,
