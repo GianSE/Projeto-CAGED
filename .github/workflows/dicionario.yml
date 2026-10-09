@@ -8,11 +8,12 @@ name: Dicionário MTE (checagem)
 
 on:
   schedule:
-    - cron: "0 6 1 * *" # todo dia 1 do mês, 06:00 UTC — muda raro, não precisa checar toda semana
+    - cron: "0 6 1 * *" # todo dia 1 do mês, 06:00 UTC — alerta independente, muda raro
   push:
     paths:
       - ".github/workflows/dicionario.yml"
   workflow_dispatch:
+  workflow_call: # também chamado pelo pipeline.yml antes de cada silver
 
 env:
   MODO_NUVEM: "1"

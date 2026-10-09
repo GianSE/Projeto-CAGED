@@ -6,12 +6,13 @@ name: Gold análise mercado TI (silver-*-ti -> gold-analise-mercado-ti)
 # vez é mais simples e barato que rastrear o que mudou.
 
 on:
-  schedule:
-    - cron: "0 10 * * 1" # toda segunda, 10:00 UTC (depois das silvers)
+  # Sem schedule próprio — quem agenda é o pipeline.yml orquestrador, que
+  # só chama este depois das duas silvers terminarem.
   push:
     paths:
       - ".github/workflows/gold-analise-mercado-ti.yml"
   workflow_dispatch:
+  workflow_call:
 
 env:
   MODO_NUVEM: "1"

@@ -1,0 +1,99 @@
+name: Pipeline (orquestrador)
+
+# Chama os 6 workflows na ordem certa, como uma fila de dependência real
+# (não só horário escalonado):
+#
+#   bronze-caged ┐
+#   bronze-rais  ┼─ paralelo, sem dependência entre si
+#   dicionario   ┘
+#        │
+#        ├─ silver-caged-ti  (precisa de bronze-caged + dicionario)
+#        └─ silver-rais-ti   (precisa de bronze-rais + dicionario)
+#                │
+#                └─ gold-analise-mercado-ti  (precisa das duas silvers)
+#
+# "comecar_em" deixa pular camada: rodar só a partir da silver (bronze já
+# está em dia, só quer traduzir) ou só a gold (silvers já estão em dia, só
+# quer reagregar). Cada um dos 6 workflows também continua podendo ser
+# disparado SOLTO (tem o próprio workflow_dispatch) pra testar uma peça só.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # toda segunda, 06:00 UTC — roda a fila inteira
+  workflow_dispatch:
+    inputs:
+      comecar_em:
+        description: "A partir de qual camada rodar"
+        type: choice
+        options: [bronze, silver, gold]
+        default: bronze
+      ano_inicio:
+        description: "Ano inicial pra bronze/silver (vazio = ano atual - 1)"
+      ano_fim:
+        description: "Ano final pra bronze/silver (vazio = ano atual)"
+
+jobs:
+  decidir:
+    runs-on: ubuntu-latest
+    outputs:
+      bronze: ${{ steps.calc.outputs.bronze }}
+      silver: ${{ steps.calc.outputs.silver }}
+      gold: ${{ steps.calc.outputs.gold }}
+    steps:
+      - id: calc
+        run: |
+          COMECAR="${{ github.event.inputs.comecar_em || 'bronze' }}"
+          echo "Começando em: $COMECAR"
+          case "$COMECAR" in
+            bronze) echo "bronze=true" >> "$GITHUB_OUTPUT"; echo "silver=true" >> "$GITHUB_OUTPUT"; echo "gold=true" >> "$GITHUB_OUTPUT" ;;
+            silver) echo "bronze=false" >> "$GITHUB_OUTPUT"; echo "silver=true" >> "$GITHUB_OUTPUT"; echo "gold=true" >> "$GITHUB_OUTPUT" ;;
+            gold)   echo "bronze=false" >> "$GITHUB_OUTPUT"; echo "silver=false" >> "$GITHUB_OUTPUT"; echo "gold=true" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  bronze-caged:
+    needs: decidir
+    if: needs.decidir.outputs.bronze == 'true'
+    uses: ./.github/workflows/bronze-caged.yml
+    with:
+      ano_inicio: ${{ github.event.inputs.ano_inicio }}
+      ano_fim: ${{ github.event.inputs.ano_fim }}
+    secrets: inherit
+
+  bronze-rais:
+    needs: decidir
+    if: needs.decidir.outputs.bronze == 'true'
+    uses: ./.github/workflows/bronze-rais.yml
+    with:
+      ano_inicio: ${{ github.event.inputs.ano_inicio }}
+      ano_fim: ${{ github.event.inputs.ano_fim }}
+    secrets: inherit
+
+  dicionario:
+    needs: decidir
+    if: needs.decidir.outputs.bronze == 'true'
+    uses: ./.github/workflows/dicionario.yml
+    secrets: inherit
+
+  silver-caged-ti:
+    needs: [decidir, bronze-caged, dicionario]
+    if: needs.decidir.outputs.silver == 'true' && !failure() && !cancelled()
+    uses: ./.github/workflows/silver-caged-ti.yml
+    with:
+      ano_inicio: ${{ github.event.inputs.ano_inicio }}
+      ano_fim: ${{ github.event.inputs.ano_fim }}
+    secrets: inherit
+
+  silver-rais-ti:
+    needs: [decidir, bronze-rais, dicionario]
+    if: needs.decidir.outputs.silver == 'true' && !failure() && !cancelled()
+    uses: ./.github/workflows/silver-rais-ti.yml
+    with:
+      ano_inicio: ${{ github.event.inputs.ano_inicio }}
+      ano_fim: ${{ github.event.inputs.ano_fim }}
+    secrets: inherit
+
+  gold:
+    needs: [decidir, silver-caged-ti, silver-rais-ti]
+    if: needs.decidir.outputs.gold == 'true' && !failure() && !cancelled()
+    uses: ./.github/workflows/gold-analise-mercado-ti.yml
+    secrets: inherit

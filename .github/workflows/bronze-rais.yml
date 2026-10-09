@@ -8,8 +8,7 @@ name: Bronze RAIS (FTP -> bronze-rais)
 # recente sem varrer a série toda a cada rodada.
 
 on:
-  schedule:
-    - cron: "0 7 * * 1" # toda segunda, 07:00 UTC (1h depois do bronze-caged)
+  # Sem schedule próprio — quem agenda é o pipeline.yml orquestrador.
   push:
     paths:
       - ".github/workflows/bronze-rais.yml"
@@ -19,6 +18,12 @@ on:
         description: "Ano inicial (vazio = ano atual - 1)"
       ano_fim:
         description: "Ano final (vazio = ano atual)"
+  workflow_call:
+    inputs:
+      ano_inicio:
+        type: string
+      ano_fim:
+        type: string
 
 env:
   MODO_NUVEM: "1"
@@ -47,8 +52,8 @@ jobs:
       - id: chk
         working-directory: tasks_python
         run: |
-          ANO_INICIO="${{ github.event.inputs.ano_inicio }}"
-          ANO_FIM="${{ github.event.inputs.ano_fim }}"
+          ANO_INICIO="${{ inputs.ano_inicio }}"
+          ANO_FIM="${{ inputs.ano_fim }}"
           [ -z "$ANO_INICIO" ] && ANO_INICIO=$(( $(date +%Y) - 1 ))
           [ -z "$ANO_FIM" ] && ANO_FIM=$(date +%Y)
           echo "Recorte: $ANO_INICIO-$ANO_FIM"

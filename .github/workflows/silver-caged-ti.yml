@@ -5,8 +5,8 @@ name: Silver CAGED TI (bronze-caged -> silver-caged-ti)
 # "bronze tem ano que a silver ainda não tem", não "FTP tem arquivo novo".
 
 on:
-  schedule:
-    - cron: "0 8 * * 1" # toda segunda, 08:00 UTC (depois do bronze-caged)
+  # Sem schedule próprio — quem agenda é o pipeline.yml orquestrador, que
+  # só chama este depois de bronze-caged.yml e dicionario.yml terminarem.
   push:
     paths:
       - ".github/workflows/silver-caged-ti.yml"
@@ -16,6 +16,12 @@ on:
         description: "Ano inicial (vazio = ano atual - 1)"
       ano_fim:
         description: "Ano final (vazio = ano atual)"
+  workflow_call:
+    inputs:
+      ano_inicio:
+        type: string
+      ano_fim:
+        type: string
 
 env:
   MODO_NUVEM: "1"
@@ -38,8 +44,8 @@ jobs:
       - id: chk
         working-directory: tasks_python
         run: |
-          ANO_INICIO="${{ github.event.inputs.ano_inicio }}"
-          ANO_FIM="${{ github.event.inputs.ano_fim }}"
+          ANO_INICIO="${{ inputs.ano_inicio }}"
+          ANO_FIM="${{ inputs.ano_fim }}"
           [ -z "$ANO_INICIO" ] && ANO_INICIO=$(( $(date +%Y) - 1 ))
           [ -z "$ANO_FIM" ] && ANO_FIM=$(date +%Y)
           echo "Recorte: $ANO_INICIO-$ANO_FIM"

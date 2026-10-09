@@ -212,13 +212,15 @@ def aplicar_secret_hf(con) -> None:
     Retry: autenticar resolve a listagem/metadado, mas o DOWNLOAD do
     arquivo em si (resolve/main/...) é outro limite de taxa, do CDN — a
     autenticação ajuda mas não elimina (visto na prática:
-    gold_unificado.mapa bateu 429 lendo a silver mesmo autenticado). O
-    padrão do DuckDB (3 tentativas, ~2s de espera total) é curto demais
-    pra uma janela de limite de taxa que costuma levar ~1 min pra liberar.
+    gold_rais.construir_gold e gold_unificado.mapa bateram 429 lendo a
+    silver mesmo autenticados). O erro real do Hub citou janela de 300s
+    ("0/500 requests... in current 300s window") — o padrão do DuckDB (3
+    tentativas, ~2s de espera total) nem chega perto disso. 8s/16/32/64/
+    128/256s (6 tentativas, ~504s de cobertura) passa da janela inteira.
     """
     con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute("SET http_retries=6;")
-    con.execute("SET http_retry_wait_ms=3000;")
+    con.execute("SET http_retry_wait_ms=8000;")
     con.execute("SET http_retry_backoff=2;")
 
     token = os.getenv("HF_TOKEN")
