@@ -89,11 +89,18 @@ def existe_remoto(repo: str, caminho: str) -> bool:
 _cache_fontes: dict[tuple, set] = {}
 
 
+# Tabelas grandes o bastante (30+ GB) pra NÃO caber numa leitura só — só
+# essas ficam com a consulta restrita ao ano. As do CAGED (cada uma, no
+# máximo, algumas centenas de MB somando todos os anos) leem inteiras de
+# uma vez: é o que evita bater limite de taxa do Hub (ver docstring abaixo).
+_TABELAS_GRANDES = {"rais_vinc", "rais_estab"}
+
+
 def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
     """
     Caminhos do FTP (`caminho_fonte`, coluna gravada em toda linha da
-    bronze) já representados no repositório de bronze PARA ESTE ANO — NÃO
-    pelo nome do arquivo de destino, e NÃO a tabela inteira.
+    bronze) já representados no repositório de bronze — NÃO pelo nome do
+    arquivo de destino.
 
     Por quê caminho_fonte, não nome de arquivo: `publicar_bronze.py` quebra
     arquivo grande em `_parteNN` só para caber melhor no Hub — o MinIO tem
@@ -102,14 +109,25 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
     RAIS, porque esse nome nunca existiu no Hub — só os pedaços (mesma
     lição de auditoria.consistencia: completude por `caminho_fonte`).
 
-    Por quê por ANO, não a tabela inteira: a primeira versão lia a tabela
-    inteira para checar UM ano — no rais_vinc (30+ GB, ~19 anos) isso
-    custava minutos por item verificado. Restringir ao glob do ano cai pro
-    tamanho de UM ano, que é o que a decisão realmente precisa.
+    Por quê a tabela inteira numa leitura só, pro CAGED: a primeira versão
+    restringia ao glob do ano pra não ler os 30+ GB do rais_vinc por
+    checagem. Mas isso significa UMA CHAMADA DE REDE por (tabela, ano) — e
+    verificando ~20 anos de 5 tabelas do CAGED em sequência, isso bateu
+    limite de taxa (HTTP 429) do Hub na prática. Ler a tabela inteira UMA
+    vez (cabe fácil pro tamanho do CAGED) e reaproveitar o resultado pros
+    anos todos corta ~20 chamadas pra 1. A RAIS continua por ano — ela sim
+    é grande o bastante pra justificar.
     """
-    chave = (tabela, ano)
+    tabela_inteira = tabela not in _TABELAS_GRANDES
+    chave = tabela if tabela_inteira else (tabela, ano)
     if chave in _cache_fontes:
-        return _cache_fontes[chave]
+        resultado = _cache_fontes[chave]
+        if resultado is None:
+            # Já tinha falhado nesta execução — não martela o Hub de novo
+            # pra cada item da mesma tabela, só repete o "não sei".
+            raise RuntimeError(f"consulta de caminho_fonte de {chave} já tinha "
+                                "falhado nesta execução (ver tentativa original acima)")
+        return resultado
 
     import time
     import duckdb
@@ -117,10 +135,15 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs; SET enable_progress_bar=false;")
     # "ano={ano}*" casa tanto ano=2022 quanto ano=2022_parcial.
-    origem = glob_bronze(tabela, f"ano={ano}*/**/*.parquet")
+    origem = glob_bronze(tabela) if tabela_inteira else glob_bronze(tabela, f"ano={ano}*/**/*.parquet")
 
+    # O limite de taxa do Hub é por IP e a janela costuma ser de ~1 min —
+    # 3 tentativas com poucos segundos de espera não davam tempo dela
+    # passar. 5 tentativas com espera crescente (5s, 15s, 45s, 90s) cobre
+    # isso sem travar o job por tempo absurdo se o erro for outra coisa.
     erro_final = None
-    for tentativa in range(3):
+    esperas = [5, 15, 45, 90]
+    for tentativa in range(5):
         try:
             linhas = con.execute(
                 f"SELECT DISTINCT caminho_fonte FROM read_parquet('{origem}', union_by_name=true)"
@@ -136,16 +159,18 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
                 _cache_fontes[chave] = set()
                 return set()
             erro_final = e
-            if tentativa < 2:
-                time.sleep(2 * (tentativa + 1))
+            if tentativa < len(esperas):
+                time.sleep(esperas[tentativa])
 
-    # As 3 tentativas falharam por erro de verdade (não "vazio"). Levanta
-    # em vez de devolver set() — um set() vazio aqui seria lido como "nada
-    # publicado ainda" e reprocessaria à toa (ou pior, duplicaria dado já
-    # publicado). Quem chama decide o que fazer com a incerteza.
+    # As 3 tentativas falharam por erro de verdade (não "vazio"). Cacheia a
+    # falha (None, não set()) pra não martelar de novo no mesmo processo, e
+    # levanta — um set() vazio aqui seria lido como "nada publicado ainda"
+    # e reprocessaria à toa (ou pior, duplicaria dado já publicado). Quem
+    # chama decide o que fazer com a incerteza.
+    _cache_fontes[chave] = None
+    alvo = tabela if tabela_inteira else f"{tabela} (ano {ano})"
     raise RuntimeError(
-        f"não consegui consultar caminho_fonte de {tabela} (ano {ano}) "
-        f"depois de 3 tentativas: {erro_final}"
+        f"não consegui consultar caminho_fonte de {alvo} depois de 3 tentativas: {erro_final}"
     )
 
 
