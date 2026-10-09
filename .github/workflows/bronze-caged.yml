@@ -8,12 +8,12 @@ name: Bronze CAGED
 # mais antigo, dispare manualmente com --ano-inicio mais pra trás.
 
 on:
-  # Sem schedule próprio — quem agenda é o pipeline.yml orquestrador, que
-  # chama este workflow (e os outros 5) na ordem certa. Os gatilhos abaixo
-  # ficam só pra rodar/testar este pedaço isoladamente.
+  # Sem schedule próprio — quem agenda é o pipeline.yml orquestrador.
   push:
     paths:
       - ".github/workflows/bronze-caged.yml"
+      - "tasks-python/1-bronze/**"
+      - "tasks-python/_utils/**"
   workflow_dispatch:
     inputs:
       ano_inicio:
@@ -28,8 +28,9 @@ on:
         type: string
 
 env:
-  MODO_NUVEM: "1"
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   PYTHONUNBUFFERED: "1"
 
 jobs:
@@ -52,33 +53,11 @@ jobs:
       - run: pip install -r requirements-actions.txt
 
       - id: chk
-        working-directory: tasks_python
+        working-directory: tasks-python/1-bronze
         run: |
           ANO_INICIO="${{ inputs.ano_inicio }}"
           ANO_FIM="${{ inputs.ano_fim }}"
-          [ -z "$ANO_INICIO" ] && ANO_INICIO=$(( $(date +%Y) - 1 ))
-          [ -z "$ANO_FIM" ] && ANO_FIM=$(date +%Y)
-          echo "Recorte: $ANO_INICIO-$ANO_FIM"
-          python -m extracao_ftp.verificar_novidades \
-            --dataset novo_caged caged caged_ajustes \
-            --ano-inicio "$ANO_INICIO" --ano-fim "$ANO_FIM"
-
-      - name: Notifica no Telegram
-        if: always()
-        run: |
-          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if [ "${{ job.status }}" != "success" ]; then
-            MSG="❌ *Bronze CAGED*: falha ao verificar o FTP.
-          $LINK"
-          elif [ "${{ steps.chk.outputs.tem_novidade }}" = "true" ]; then
-            MSG="🔎 *Bronze CAGED*: novidade encontrada, baixando agora.
-          $LINK"
-          else
-            MSG="🔎 *Bronze CAGED*: verificado, já em dia."
-          fi
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
-            --data-urlencode text="$MSG" > /dev/null
+          python bronze-caged.py --modo verificar --ano-inicio "${ANO_INICIO:-0}" --ano-fim "${ANO_FIM:-9999}"
 
   atualizar:
     needs: verificar
@@ -97,30 +76,7 @@ jobs:
       - run: pip install -r requirements-actions.txt
 
       - name: Baixa ${{ matrix.item.tabela }} ${{ matrix.item.ano }}
-        working-directory: tasks_python
+        working-directory: tasks-python/1-bronze
         run: |
-          case "${{ matrix.item.tabela }}" in
-            caged_mov|caged_for|caged_exc) DATASET=novo_caged ;;
-            caged_old)                     DATASET=caged ;;
-            caged_ajustes)                 DATASET=caged_ajustes ;;
-          esac
-          python -m extracao_ftp.run_extracao \
-            --dataset $DATASET --tabela ${{ matrix.item.tabela }} \
+          python bronze-caged.py --modo processar --tabela ${{ matrix.item.tabela }} \
             --ano-inicio ${{ matrix.item.ano }} --ano-fim ${{ matrix.item.ano }}
-
-  relatorio:
-    needs: [verificar, atualizar]
-    if: always() && needs.verificar.outputs.tem_novidade == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notifica no Telegram
-        run: |
-          N=$(echo '${{ needs.verificar.outputs.anos }}' | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
-          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          ICONE="🏁"; [ "${{ needs.atualizar.result }}" != "success" ] && ICONE="⚠️"
-          MSG="$ICONE *Bronze CAGED concluído*
-          Download: ${{ needs.atualizar.result }} ($N item(ns))
-          $LINK"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
-            --data-urlencode text="$MSG" > /dev/null

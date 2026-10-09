@@ -1,22 +1,21 @@
 name: Gold análise mercado TI
 
-# Reconstrói os agregados finais a partir da silver já publicada. Sem
-# verificação prévia: a gold inteira é pequena (poucos MB) e cara de
-# construir é a tradução, não a agregação — reconstruir tudo de novo toda
-# vez é mais simples e barato que rastrear o que mudou.
+# Reconstrói os agregados finais a partir da silver-caged-ti/silver-rais-ti
+# já publicadas, e publica em Gianpedro/gold-analise-mercado-ti.
 
 on:
-  # Sem schedule próprio — quem agenda é o pipeline.yml orquestrador, que
-  # só chama este depois das duas silvers terminarem.
   push:
     paths:
       - ".github/workflows/gold-analise-mercado-ti.yml"
+      - "tasks-python/3-gold/**"
+      - "tasks-python/_utils/**"
   workflow_dispatch:
   workflow_call:
 
 env:
-  MODO_NUVEM: "1"
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   PYTHONUNBUFFERED: "1"
 
 jobs:
@@ -29,44 +28,6 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-actions.txt
 
-      - name: Semeia referências estáticas (geo_municipios)
-        working-directory: tasks_python
-        run: |
-          mkdir -p ../publicacao/gold
-          python -c "
-          from huggingface_hub import hf_hub_download
-          import shutil
-          try:
-              p = hf_hub_download('Gianpedro/gold-analise-mercado-ti', 'geo_municipios.parquet', repo_type='dataset')
-              shutil.copy(p, '../publicacao/gold/geo_municipios.parquet')
-              print('geo_municipios.parquet semeado')
-          except Exception as e:
-              print(f'aviso: geo_municipios.parquet ainda nao existe no Hub ({e})')
-          "
-
-      - name: Reconstrói a gold
-        working-directory: tasks_python
-        run: |
-          python -m gold_rais.construir_gold
-          python -m gold_unificado.mapa
-          python -m ciencia_dados.clusters_municipios
-          python -m ciencia_dados.materializar
-          python -m gold_caged.consolidar
-          python -m gold_caged.unificar
-
-      - name: Publica no Hugging Face
-        working-directory: tasks_python
-        run: |
-          python -m gold_caged.publicar_hf
-          python -m gold_unificado.publicar_gold
-
-      - name: Notifica no Telegram
-        if: always()
-        run: |
-          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          ICONE="🏁"; [ "${{ job.status }}" != "success" ] && ICONE="⚠️"
-          MSG="$ICONE *Gold análise mercado TI*: ${{ job.status }}
-          $LINK"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
-            --data-urlencode text="$MSG" > /dev/null
+      - name: Reconstrói e publica a gold
+        working-directory: tasks-python/3-gold
+        run: python gold-analise-mercado-ti.py
