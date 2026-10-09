@@ -1,4 +1,4 @@
-name: Silver CAGED TI (bronze-caged -> silver-caged-ti)
+name: Silver CAGED TI
 
 # Traduz e filtra pra TI o que já está na bronze-caged. NÃO baixa nada do
 # FTP — isso é trabalho do bronze-caged.yml, antes. Aqui a pergunta é

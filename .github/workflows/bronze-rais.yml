@@ -1,4 +1,4 @@
-name: Bronze RAIS (FTP -> bronze-rais)
+name: Bronze RAIS
 
 # Só a bronze da RAIS: baixa do FTP, converte pra parquet ZSTD-3, publica
 # em bronze-rais. Sem tradução, sem filtro de TI.

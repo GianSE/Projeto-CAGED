@@ -1,4 +1,4 @@
-name: Gold análise mercado TI (silver-*-ti -> gold-analise-mercado-ti)
+name: Gold análise mercado TI
 
 # Reconstrói os agregados finais a partir da silver já publicada. Sem
 # verificação prévia: a gold inteira é pequena (poucos MB) e cara de

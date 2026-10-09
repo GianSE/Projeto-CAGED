@@ -1,4 +1,4 @@
-name: Silver RAIS TI (bronze-rais -> silver-rais-ti)
+name: Silver RAIS TI
 
 # Traduz e filtra pra TI o que já está na bronze-rais. NÃO baixa nada do
 # FTP — isso é trabalho do bronze-rais.yml, antes.

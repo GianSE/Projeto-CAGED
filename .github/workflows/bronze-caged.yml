@@ -1,4 +1,4 @@
-name: Bronze CAGED (FTP -> bronze-caged)
+name: Bronze CAGED
 
 # Só a bronze do CAGED: baixa do FTP, converte pra parquet ZSTD-3, publica
 # em bronze-caged. Sem tradução, sem filtro de TI.
