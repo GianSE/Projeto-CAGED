@@ -132,6 +132,9 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
     import time
     import duckdb
 
+    alvo_log = tabela if tabela_inteira else f"{tabela}/{ano}"
+    print(f"      🔗 consultando {alvo_log} no Hub...")
+
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs; SET enable_progress_bar=false;")
     # "ano={ano}*" casa tanto ano=2022 quanto ano=2022_parcial.
@@ -160,7 +163,10 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
                 return set()
             erro_final = e
             if tentativa < len(esperas):
-                time.sleep(esperas[tentativa])
+                espera = esperas[tentativa]
+                print(f"      ⏳ {alvo_log}: tentativa {tentativa + 1}/5 falhou "
+                      f"({str(e)[:80]}), esperando {espera}s...")
+                time.sleep(espera)
 
     # As 3 tentativas falharam por erro de verdade (não "vazio"). Cacheia a
     # falha (None, não set()) pra não martelar de novo no mesmo processo, e
