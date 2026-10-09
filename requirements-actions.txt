@@ -1,0 +1,27 @@
+# Dependências do CI (GitHub Actions, MODO_NUVEM=1): só o que os workflows
+# em .github/workflows/*.yml realmente importam. Deliberadamente SEM:
+#   - s3fs           (só é importado dentro de _fs_minio(), nunca chamada
+#                      em modo nuvem — o modo nuvem nunca fala com MinIO)
+#   - openpyxl/xlrd/lxml (extração de planilha de dicionário: só roda
+#                      localmente, em bootstrap_dicionarios_hf.py; o
+#                      checador do CI, dicionario.yml, só lista o FTP)
+#   - flask/psutil   (painel de observabilidade — não existe no CI)
+#   - streamlit/plotly (dashboard — não roda no CI, é outro deploy)
+# Ver requirements-pipeline.txt pro conjunto completo (máquina local, com
+# MinIO/painel/dashboard).
+
+duckdb
+pandas
+pyarrow
+boto3            # import de módulo em extracao_ftp/estado.py (EstadoLake),
+                 # mesmo sem chamar a S3 de verdade em modo nuvem
+python-dotenv
+huggingface_hub
+
+# --- extração do FTP do MTE (bronze-caged.yml / bronze-rais.yml) ---
+py7zr
+
+# --- modelos (gold-analise-mercado-ti.yml -> ciencia_dados.materializar) ---
+scikit-learn     # clusters_municipios.py
+statsmodels      # hiato_salarial.py, nowcast_estoque.py, previsao_saldo.py,
+                 # serie.py, sobrevivencia.py (traz scipy como dependência)

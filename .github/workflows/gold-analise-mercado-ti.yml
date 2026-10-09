@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements-pipeline.txt
+      - run: pip install -r requirements-actions.txt
 
       - name: Semeia referências estáticas (geo_municipios)
         working-directory: tasks_python
