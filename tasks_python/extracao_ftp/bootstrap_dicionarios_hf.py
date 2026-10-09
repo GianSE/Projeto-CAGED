@@ -23,6 +23,7 @@ com `python -m extracao_ftp.run_extracao --so-dicionarios`):
 
 Reexecute sempre que extrair um dicionário novo localmente.
 """
+import json
 import sys
 from pathlib import Path
 
@@ -33,6 +34,8 @@ from extracao_ftp.config_extracao import (
     MINIO_REGION,
     MINIO_SECRET_KEY,
 )
+from extracao_ftp.dicionarios import PASTAS_LAYOUT, _listar_planilhas
+from extracao_ftp.ftp_utils import ClienteFTP
 from silver_caged.dicionarios import PREFIXO_DICIONARIOS
 
 DIR_LOCAL = Path(__file__).resolve().parents[2] / "publicacao" / "_dicionarios_espelho"
@@ -66,6 +69,19 @@ def main() -> int:
         destino = DIR_LOCAL / rel
         destino.parent.mkdir(parents=True, exist_ok=True)
         fs.get(caminho, str(destino))
+
+    # Contagem de planilhas por pasta do FTP agora — serve de "assinatura"
+    # pro workflow dicionario.yml: ele só lista o FTP (barato) e compara
+    # contra isso, sem precisar ler dado nenhum, pra saber se algo mudou.
+    print("📋 Registrando a contagem atual de planilhas do FTP...")
+    cliente = ClienteFTP()
+    cliente.conectar()
+    contagem = {pasta: len(_listar_planilhas(cliente, pasta, recursivo))
+                for pasta, recursivo in PASTAS_LAYOUT}
+    cliente.fechar()
+    (DIR_LOCAL / "_contagem_planilhas.json").write_text(
+        json.dumps(contagem, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"   {contagem}")
 
     print(f"📤 Publicando em {nuvem.REPO_DICIONARIOS}...")
     from huggingface_hub import HfApi

@@ -89,6 +89,14 @@ def conectar_duckdb():
         """
     )
 
+    # No modo nuvem toda leitura de origem/silver já publicada é hf://, e
+    # sem autenticar isso explicitamente o DuckDB lê anônimo (limite de
+    # taxa bem mais baixo — foi o que causou os HTTP 429 de hoje mesmo com
+    # HF_TOKEN no ambiente: o DuckDB não lê a env var sozinho).
+    from extracao_ftp import nuvem
+
+    nuvem.aplicar_secret_hf(con)
+
     DIR_SPILL.mkdir(parents=True, exist_ok=True)
     con.execute(f"SET memory_limit='{DUCKDB_MEMORY_LIMIT}';")
     con.execute(f"SET temp_directory='{DIR_SPILL.as_posix()}';")

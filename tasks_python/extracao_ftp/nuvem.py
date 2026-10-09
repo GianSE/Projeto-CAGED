@@ -137,6 +137,7 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
 
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs; SET enable_progress_bar=false;")
+    aplicar_secret_hf(con)
     # "ano={ano}*" casa tanto ano=2022 quanto ano=2022_parcial.
     origem = glob_bronze(tabela) if tabela_inteira else glob_bronze(tabela, f"ano={ano}*/**/*.parquet")
 
@@ -194,6 +195,29 @@ def publicar_arquivo(local: Path, repo: str, caminho_repo: str, privado: bool = 
 
 def preparar_staging() -> None:
     DIR_TEMP_NUVEM.mkdir(parents=True, exist_ok=True)
+
+
+def aplicar_secret_hf(con) -> None:
+    """
+    Autentica as leituras `hf://` do DuckDB com o HF_TOKEN do ambiente.
+
+    Sem isso, toda leitura `hf://` via DuckDB é ANÔNIMA — o DuckDB NÃO lê a
+    variável de ambiente HF_TOKEN sozinho (diferente da biblioteca
+    huggingface_hub em Python); ele só autentica com um SECRET explícito
+    (ver docs do httpfs: TYPE huggingface). Foi isso que causou os HTTP 429
+    de hoje mesmo rodando no Actions com HF_TOKEN configurado no ambiente —
+    o token existia, mas o DuckDB nunca foi avisado dele.
+    """
+    token = os.getenv("HF_TOKEN")
+    if not token:
+        return
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    con.execute(f"""
+        CREATE OR REPLACE SECRET secret_hf (
+            TYPE huggingface,
+            TOKEN '{token.replace("'", "''")}'
+        );
+    """)
 
 
 def glob_bronze(tabela: str, resto: str = "**/*.parquet") -> str:
