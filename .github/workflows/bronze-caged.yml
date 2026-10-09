@@ -1,0 +1,119 @@
+name: Bronze CAGED (FTP -> bronze-caged)
+
+# Só a bronze do CAGED: baixa do FTP, converte pra parquet ZSTD-3, publica
+# em bronze-caged. Sem tradução, sem filtro de TI.
+#
+# Padrão automático (sem input manual): ano atual e anterior só — rápido,
+# cobre o caso comum (competência nova saindo todo mês). Se faltar algo
+# mais antigo, dispare manualmente com --ano-inicio mais pra trás.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # toda segunda, 06:00 UTC
+  push:
+    paths:
+      - ".github/workflows/bronze-caged.yml"
+  workflow_dispatch:
+    inputs:
+      ano_inicio:
+        description: "Ano inicial (vazio = ano atual - 1)"
+      ano_fim:
+        description: "Ano final (vazio = ano atual)"
+
+env:
+  MODO_NUVEM: "1"
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    outputs:
+      tem_novidade: ${{ steps.chk.outputs.tem_novidade }}
+      anos: ${{ steps.chk.outputs.anos }}
+    steps:
+      - name: Recursos do runner (CPU, RAM, disco)
+        run: |
+          echo "--- CPU ---"; nproc --all
+          echo "--- RAM ---"; free -h
+          echo "--- Disco ---"; df -h /
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-pipeline.txt
+
+      - id: chk
+        working-directory: tasks_python
+        run: |
+          ANO_INICIO="${{ github.event.inputs.ano_inicio }}"
+          ANO_FIM="${{ github.event.inputs.ano_fim }}"
+          [ -z "$ANO_INICIO" ] && ANO_INICIO=$(( $(date +%Y) - 1 ))
+          [ -z "$ANO_FIM" ] && ANO_FIM=$(date +%Y)
+          echo "Recorte: $ANO_INICIO-$ANO_FIM"
+          python -m extracao_ftp.verificar_novidades \
+            --dataset novo_caged caged caged_ajustes \
+            --ano-inicio "$ANO_INICIO" --ano-fim "$ANO_FIM"
+
+      - name: Notifica no Telegram
+        if: always()
+        run: |
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "${{ job.status }}" != "success" ]; then
+            MSG="❌ *Bronze CAGED*: falha ao verificar o FTP.
+          $LINK"
+          elif [ "${{ steps.chk.outputs.tem_novidade }}" = "true" ]; then
+            MSG="🔎 *Bronze CAGED*: novidade encontrada, baixando agora.
+          $LINK"
+          else
+            MSG="🔎 *Bronze CAGED*: verificado, já em dia."
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
+            --data-urlencode text="$MSG" > /dev/null
+
+  atualizar:
+    needs: verificar
+    if: needs.verificar.outputs.tem_novidade == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        item: ${{ fromJson(needs.verificar.outputs.anos) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-pipeline.txt
+
+      - name: Baixa ${{ matrix.item.tabela }} ${{ matrix.item.ano }}
+        working-directory: tasks_python
+        run: |
+          case "${{ matrix.item.tabela }}" in
+            caged_mov|caged_for|caged_exc) DATASET=novo_caged ;;
+            caged_old)                     DATASET=caged ;;
+            caged_ajustes)                 DATASET=caged_ajustes ;;
+          esac
+          python -m extracao_ftp.run_extracao \
+            --dataset $DATASET --tabela ${{ matrix.item.tabela }} \
+            --ano-inicio ${{ matrix.item.ano }} --ano-fim ${{ matrix.item.ano }}
+
+  relatorio:
+    needs: [verificar, atualizar]
+    if: always() && needs.verificar.outputs.tem_novidade == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notifica no Telegram
+        run: |
+          N=$(echo '${{ needs.verificar.outputs.anos }}' | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ICONE="🏁"; [ "${{ needs.atualizar.result }}" != "success" ] && ICONE="⚠️"
+          MSG="$ICONE *Bronze CAGED concluído*
+          Download: ${{ needs.atualizar.result }} ($N item(ns))
+          $LINK"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
+            --data-urlencode text="$MSG" > /dev/null

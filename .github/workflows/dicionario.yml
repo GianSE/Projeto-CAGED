@@ -1,0 +1,51 @@
+name: Dicionário MTE (checagem)
+
+# Só AVISA se o FTP tem planilha de layout/dicionário nova — não extrai
+# nada sozinho. A extração de verdade ainda só escreve no MinIO local
+# (ver extracao_ftp/bootstrap_dicionarios_hf.py); dicionário muda raramente
+# e errado é o jeito mais silencioso de quebrar a tradução, então o
+# publicador fica manual, com você olhando o resultado.
+
+on:
+  schedule:
+    - cron: "0 6 1 * *" # todo dia 1 do mês, 06:00 UTC — muda raro, não precisa checar toda semana
+  push:
+    paths:
+      - ".github/workflows/dicionario.yml"
+  workflow_dispatch:
+
+env:
+  MODO_NUVEM: "1"
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-pipeline.txt
+
+      - id: chk
+        working-directory: tasks_python
+        run: python -m extracao_ftp.verificar_dicionarios
+
+      - name: Notifica no Telegram
+        if: always()
+        run: |
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "${{ job.status }}" != "success" ]; then
+            MSG="❌ *Dicionário MTE*: falha ao verificar o FTP.
+          $LINK"
+          elif [ "${{ steps.chk.outputs.tem_novidade }}" = "true" ]; then
+            MSG="⚠️ *Dicionário MTE*: planilha nova no FTP — rode o bootstrap manualmente.
+          $LINK"
+          else
+            MSG="✅ *Dicionário MTE*: sem planilha nova, publicado está em dia."
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
+            --data-urlencode text="$MSG" > /dev/null

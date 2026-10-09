@@ -1,0 +1,103 @@
+name: Silver RAIS TI (bronze-rais -> silver-rais-ti)
+
+# Traduz e filtra pra TI o que já está na bronze-rais. NÃO baixa nada do
+# FTP — isso é trabalho do bronze-rais.yml, antes.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # toda segunda, 09:00 UTC (depois do bronze-rais)
+  push:
+    paths:
+      - ".github/workflows/silver-rais-ti.yml"
+  workflow_dispatch:
+    inputs:
+      ano_inicio:
+        description: "Ano inicial (vazio = ano atual - 1)"
+      ano_fim:
+        description: "Ano final (vazio = ano atual)"
+
+env:
+  MODO_NUVEM: "1"
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    outputs:
+      tem_novidade: ${{ steps.chk.outputs.tem_novidade }}
+      anos: ${{ steps.chk.outputs.anos }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-pipeline.txt
+
+      - id: chk
+        working-directory: tasks_python
+        run: |
+          ANO_INICIO="${{ github.event.inputs.ano_inicio }}"
+          ANO_FIM="${{ github.event.inputs.ano_fim }}"
+          [ -z "$ANO_INICIO" ] && ANO_INICIO=$(( $(date +%Y) - 1 ))
+          [ -z "$ANO_FIM" ] && ANO_FIM=$(date +%Y)
+          echo "Recorte: $ANO_INICIO-$ANO_FIM"
+          python -m extracao_ftp.verificar_pendencias_silver \
+            --tabela rais_vinc rais_estab \
+            --ano-inicio "$ANO_INICIO" --ano-fim "$ANO_FIM"
+
+      - name: Notifica no Telegram
+        if: always()
+        run: |
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "${{ job.status }}" != "success" ]; then
+            MSG="❌ *Silver RAIS TI*: falha ao comparar bronze x silver.
+          $LINK"
+          elif [ "${{ steps.chk.outputs.tem_novidade }}" = "true" ]; then
+            MSG="🔎 *Silver RAIS TI*: tem ano pendente de tradução, processando.
+          $LINK"
+          else
+            MSG="🔎 *Silver RAIS TI*: verificado, já em dia."
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
+            --data-urlencode text="$MSG" > /dev/null
+
+  traduzir:
+    needs: verificar
+    if: needs.verificar.outputs.tem_novidade == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        item: ${{ fromJson(needs.verificar.outputs.anos) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-pipeline.txt
+
+      - name: Traduz ${{ matrix.item.tabela }} ${{ matrix.item.ano }}
+        working-directory: tasks_python
+        run: |
+          python -m silver_rais.construir_silver --tabela ${{ matrix.item.tabela }} \
+            --ano-inicio ${{ matrix.item.ano }} --ano-fim ${{ matrix.item.ano }}
+
+  relatorio:
+    needs: [verificar, traduzir]
+    if: always() && needs.verificar.outputs.tem_novidade == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notifica no Telegram
+        run: |
+          N=$(echo '${{ needs.verificar.outputs.anos }}' | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ICONE="🏁"; [ "${{ needs.traduzir.result }}" != "success" ] && ICONE="⚠️"
+          MSG="$ICONE *Silver RAIS TI concluído*
+          Tradução: ${{ needs.traduzir.result }} ($N item(ns))
+          $LINK"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" -d parse_mode="Markdown" \
+            --data-urlencode text="$MSG" > /dev/null
