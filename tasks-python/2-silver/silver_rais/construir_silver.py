@@ -16,7 +16,7 @@ import re
 import sys
 import time
 
-from gold_caged import escopo_tecnologia as esc
+from _utils import escopo_tecnologia as esc
 from silver_caged.dicionarios import chave_normalizada, criar_view, existe
 from silver_rais import mapeamento as mp
 from _utils import nuvem

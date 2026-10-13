@@ -614,7 +614,7 @@ def _apendice():
     A lista de códigos vem da tabela `rais_recorte_cbo` da gold, e não de uma
     lista escrita aqui: quando o recorte mudar, o apêndice muda junto.
     """
-    from gold_caged import escopo_tecnologia as esc
+    from _utils import escopo_tecnologia as esc
 
     st.divider()
     st.caption("APÊNDICE")

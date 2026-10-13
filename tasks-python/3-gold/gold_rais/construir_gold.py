@@ -51,7 +51,7 @@ import sys
 import time
 
 from _utils import nuvem
-from gold_caged import escopo_tecnologia as esc
+from _utils import escopo_tecnologia as esc
 from gold_unificado.dicionario_canonico import sql_canonico
 
 FONTE_VINC = nuvem.glob_silver_ti("rais_vinc")

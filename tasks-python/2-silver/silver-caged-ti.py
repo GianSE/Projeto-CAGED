@@ -19,9 +19,6 @@ from pathlib import Path
 _AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(_AQUI))
 sys.path.insert(0, str(_AQUI.parent))
-# construir_silver.py importa gold_caged.escopo_tecnologia (o recorte de TI é
-# definido uma vez só, reaproveitado pela silver e pela gold).
-sys.path.insert(0, str(_AQUI.parent / "3-gold"))
 
 from silver_caged.construir_silver import construir  # noqa: E402
 from silver_caged import mapeamento as mp  # noqa: E402

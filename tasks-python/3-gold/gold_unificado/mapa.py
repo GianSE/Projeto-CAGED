@@ -31,7 +31,7 @@ import sys
 import time
 
 from _utils import nuvem
-from gold_caged import escopo_tecnologia as esc
+from _utils import escopo_tecnologia as esc
 
 UF = "upper(split_part(municipio_descricao, '-', 1))"
 MUNICIPIO = "municipio_descricao"

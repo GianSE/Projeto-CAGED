@@ -56,7 +56,7 @@ import pandas as pd
 
 from _utils import nuvem
 from _utils.nuvem import conectar_duckdb
-from gold_caged import escopo_tecnologia as esc
+from _utils import escopo_tecnologia as esc
 from gold_unificado.dicionario_canonico import sql_canonico
 
 warnings.simplefilter("ignore")

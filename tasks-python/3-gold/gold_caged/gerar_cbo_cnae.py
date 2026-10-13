@@ -5,7 +5,7 @@ código, e uma coluna `categoria` pronta para curadoria manual.
 
 POR QUE EXISTE
 ---------------
-O recorte de TI hoje (gold_caged/escopo_tecnologia.py) é código a código,
+O recorte de TI hoje (_utils/escopo_tecnologia.py) é código a código,
 não por família/divisão inteira — famílias/divisões "quase certas" têm
 exceção (CBO_EXCLUIDOS) e tem código avulso fora de qualquer família
 (CBO_AVULSOS_TI, CNAE_TI por subclasse). Isso é importado de volta aqui:
@@ -24,7 +24,7 @@ from pathlib import Path
 
 from extracao_ftp.config_extracao import conectar_duckdb
 from gold_caged.cnae_secao import FAIXAS_SECAO
-from gold_caged.escopo_tecnologia import (
+from _utils.escopo_tecnologia import (
     CBO_AVULSOS_TI,
     CBO_EXCLUIDOS,
     CBO_FAMILIAS_TI,

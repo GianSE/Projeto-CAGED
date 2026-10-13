@@ -39,7 +39,7 @@ from pathlib import Path
 from _utils.nuvem import conectar_duckdb
 from gold_caged.cnae_secao import sql_secao
 from gold_unificado.dicionario_canonico import sql_canonico
-from gold_caged.escopo_tecnologia import sql_area_ti
+from _utils.escopo_tecnologia import sql_area_ti
 
 DIR_SAIDA = Path(__file__).resolve().parents[2] / "publicacao" / "detalhado"
 

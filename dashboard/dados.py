@@ -121,7 +121,7 @@ def _sql_lentes() -> str:
     Classificar em SQL (e não em Python) mantém a lógica junto da definição
     do recorte e evita trazer as linhas cruas para a memória.
     """
-    from gold_caged import escopo_tecnologia as esc
+    from _utils import escopo_tecnologia as esc
 
     return f"""
         SELECT ano_particao AS ano,

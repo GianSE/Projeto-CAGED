@@ -4,7 +4,7 @@ filtrada em TI (recorte de tecnologia, ~1% das linhas) e em partição hive
 (ano_particao=/mes_particao=), publicada em Gianpedro/silver-caged-ti.
 
 Para cada tabela (caged_mov, caged_for, caged_exc, caged_old, caged_ajustes):
-  1. Filtra o recorte de TECNOLOGIA (ver gold_caged/escopo_tecnologia.py).
+  1. Filtra o recorte de TECNOLOGIA (ver _utils/escopo_tecnologia.py).
   2. Para cada coluna codificada com dicionário disponível, faz LEFT JOIN e
      acrescenta uma coluna "<coluna>_descricao" com o texto legível — o
      código original é mantido, nada é substituído.
@@ -27,7 +27,7 @@ import sys
 import time
 
 from silver_caged import mapeamento as mp
-from gold_caged import escopo_tecnologia as esc
+from _utils import escopo_tecnologia as esc
 from silver_caged.dicionarios import chave_normalizada, criar_view, existe
 from _utils import nuvem
 
