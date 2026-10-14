@@ -4,13 +4,6 @@ name: Gold RAIS
 # Independente das outras partes da gold (mapa, modelos, CAGED consolidado).
 
 on:
-  push:
-    paths:
-      - ".github/workflows/gold-rais.yml"
-      - "tasks-python/3-gold/gold-rais.py"
-      - "tasks-python/3-gold/gold_rais/**"
-      - "tasks-python/3-gold/gold_unificado/publicar_gold.py"
-      - "tasks-python/_utils/**"
   workflow_dispatch:
   workflow_call:
 

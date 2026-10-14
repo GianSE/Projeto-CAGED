@@ -9,11 +9,6 @@ name: Bronze CAGED
 
 on:
   # Sem schedule próprio — quem agenda é o pipeline.yml orquestrador.
-  push:
-    paths:
-      - ".github/workflows/bronze-caged.yml"
-      - "tasks-python/1-bronze/**"
-      - "tasks-python/_utils/**"
   workflow_dispatch:
     inputs:
       ano_inicio:

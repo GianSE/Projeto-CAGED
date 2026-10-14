@@ -9,10 +9,6 @@ name: Dicionário MTE
 on:
   schedule:
     - cron: "0 6 1 * *" # todo dia 1 do mês, 06:00 UTC — alerta independente, muda raro
-  push:
-    paths:
-      - ".github/workflows/dicionario.yml"
-      - "tasks-python/_utils/dicionario.py"
   workflow_dispatch:
   workflow_call: # também chamado pelo pipeline.yml antes de cada silver
 

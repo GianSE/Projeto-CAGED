@@ -5,13 +5,6 @@ name: Gold modelos
 # rais_estoque_anual, que é construído lá.
 
 on:
-  push:
-    paths:
-      - ".github/workflows/gold-modelos.yml"
-      - "tasks-python/3-gold/gold-modelos.py"
-      - "tasks-python/3-gold/ciencia_dados/**"
-      - "tasks-python/3-gold/gold_unificado/publicar_gold.py"
-      - "tasks-python/_utils/**"
   workflow_dispatch:
   workflow_call:
 

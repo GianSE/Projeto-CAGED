@@ -5,14 +5,6 @@ name: Gold território
 # não o agregado da RAIS.
 
 on:
-  push:
-    paths:
-      - ".github/workflows/gold-territorio.yml"
-      - "tasks-python/3-gold/gold-territorio.py"
-      - "tasks-python/3-gold/gold_unificado/mapa.py"
-      - "tasks-python/3-gold/ciencia_dados/clusters_municipios.py"
-      - "tasks-python/3-gold/gold_unificado/publicar_gold.py"
-      - "tasks-python/_utils/**"
   workflow_dispatch:
   workflow_call:
 

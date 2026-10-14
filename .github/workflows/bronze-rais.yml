@@ -4,11 +4,6 @@ name: Bronze RAIS
 # em bronze-rais. Sem tradução, sem filtro de TI.
 
 on:
-  push:
-    paths:
-      - ".github/workflows/bronze-rais.yml"
-      - "tasks-python/1-bronze/**"
-      - "tasks-python/_utils/**"
   workflow_dispatch:
     inputs:
       ano_inicio:

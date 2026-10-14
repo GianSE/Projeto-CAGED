@@ -4,11 +4,6 @@ name: Silver CAGED TI
 # FTP — isso é trabalho do bronze-caged.yml, antes.
 
 on:
-  push:
-    paths:
-      - ".github/workflows/silver-caged-ti.yml"
-      - "tasks-python/2-silver/**"
-      - "tasks-python/_utils/**"
   workflow_dispatch:
     inputs:
       ano_inicio:

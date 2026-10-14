@@ -7,12 +7,6 @@ name: Gold CAGED consolidado
 # modelos) — só depende de silver-caged-ti.
 
 on:
-  push:
-    paths:
-      - ".github/workflows/gold-caged-consolidado.yml"
-      - "tasks-python/3-gold/gold-caged-consolidado.py"
-      - "tasks-python/3-gold/gold_caged/**"
-      - "tasks-python/_utils/**"
   workflow_dispatch:
   workflow_call:
 
