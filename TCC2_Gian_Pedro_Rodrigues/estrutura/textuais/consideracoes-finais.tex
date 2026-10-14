@@ -7,7 +7,7 @@ Este trabalho se propôs a responder se é possível construir uma plataforma an
 
 \section{Contribuições}
 
-A \textbf{contribuição técnica} é um \textit{pipeline} completo, do servidor público ao \textit{dashboard}, que trata 56,3~GB de microdados heterogêneos em uma infraestrutura modesta e entrega consulta interativa sobre a série inteira. Três decisões sustentam esse resultado: o formato colunar particionado, que permite descartar dados sem lê-los; o motor analítico \textit{in-process}, que dispensa servidor e importação prévia; e a consolidação de arquivos por partição, que reduziu 2.111 objetos a 628 e levou a contagem completa de 23,3 milhões de vínculos a 0,4~segundo.
+A \textbf{contribuição técnica} é um \textit{pipeline} completo, do servidor público ao \textit{dashboard}, que trata 56,3~GB de microdados heterogêneos sem servidor próprio nem custo de infraestrutura, é executado automaticamente toda semana e entrega consulta interativa sobre a série inteira. Quatro decisões sustentam esse resultado: o formato colunar particionado, que permite descartar dados sem lê-los; o motor analítico \textit{in-process}, que dispensa servidor e importação prévia; a consolidação de arquivos por partição, que reduziu 2.111 objetos a 628 e levou a contagem completa de 23,3 milhões de vínculos a 0,4~segundo; e a execução em nuvem, com o repositório público de dados como o próprio \textit{data lake} e etapas de integração contínua encadeadas por dependência real, que reprocessam só os anos com dado novo e podem ser repetidas uma a uma quando falham.
 
 A \textbf{contribuição metodológica} está na forma de delimitar o setor. Em lugar de escolher entre definir tecnologia pela atividade da empresa ou pela ocupação do trabalhador, o trabalho preserva as duas lentes como rótulos independentes em cada registro. Essa escolha é o que torna possível o achado central: a maior parte dos profissionais de TI está fora das empresas de TI, e existe um contingente expressivo de pessoas em empresas de TI exercendo outras ocupações, com remuneração muito inferior. Nenhum recorte de lente única enxerga os dois grupos.
 
@@ -24,6 +24,8 @@ Três limitações de método também precisam ficar registradas. A primeira é 
 \section{Estado Atual do Trabalho e Pendências}
 \label{sec:pendencias}
 
+A migração para a nuvem resolveu duas das pendências registradas na fase local: o bloqueio das bibliotecas de modelagem pela política de integridade de código do Windows, porque os modelos passaram a ser calculados em executores Linux, e a falta de espaço em disco, porque o \textit{data lake} deixou de ser local. Ela também mudou a natureza de uma terceira: não existe mais uma etapa de republicação a cumprir, porque o \textit{pipeline} grava direto nos repositórios que o \textit{dashboard} lê. O \autoref{quadro:pendencias} relaciona o que permanece.
+
 \begin{quadro}[htbp]
     \centering
     \caption{Pendências para a versão final}
@@ -37,22 +39,20 @@ Três limitações de método também precisam ficar registradas. A primeira é 
         \rowcolor{black!8}
         \textbf{Pendência} & \textbf{Situação} \\
         \midrule
-        Reprocessar os modelos após a correção de 2022 &
-        A correção da ingestão parcial de 2022 (\autoref{sec:achados-qualidade}) foi aplicada à camada tratada, e os agregados da RAIS e do mapa foram reconstruídos sobre ela. Os modelos, porém, ainda são da rodada anterior. Afetados: o \textit{nowcast}, que usa a série de estoque no ajuste dos estimadores, e a linha de 2022 da série do hiato. \textbf{Não} afetados: a previsão do saldo mensal (construída sobre o CAGED), a análise de sobrevivência (calculada sobre 2024) e os perfis de município (janela de 2020 a 2025). Os valores reportados nas tabelas de \textit{nowcast} devem, portanto, ser lidos como provisórios. \\
-        Concluir a cadeia de reconstrução &
-        As duas últimas etapas --- consolidação das tabelas em arquivo único e unificação das duas gerações do CAGED --- não foram executadas nesta rodada, porque a cadeia parou na etapa de modelos. Os arquivos consolidados ainda refletem a camada anterior à correção. \\
-        Republicar os dados abertos &
-        A partição de 2022 da RAIS e os agregados reconstruídos ainda não foram republicados no repositório público, e o \textit{dashboard} implantado em nuvem segue consumindo a versão anterior. \\
-        Obstáculo técnico: política de integridade de código &
-        O \textit{Smart App Control} do Windows passou a bloquear as bibliotecas nativas de \textit{scipy}, \textit{statsmodels} e \textit{scikit-learn} carregadas pelo Python, o que impede recalcular os modelos na máquina de desenvolvimento. As duas saídas são desligar a política --- operação irreversível, que exige reinstalação do sistema para ser revertida --- ou executar essas etapas em contêiner Linux, onde a política não se aplica. \\
-        Espaço em disco &
-        O \textit{data lake} local ocupa 72~GB em um disco com 27~GB livres. A camada Bronze (56~GB) é reponível a partir do repositório público, e o projeto tem rotina para isso, de modo que a liberação de espaço não implica perda de dado. \\
+        Levar a correção de 2022 para a nuvem &
+        A correção da ingestão parcial de 2022 (\autoref{sec:achados-qualidade}) foi aplicada à camada tratada local, e os agregados da RAIS e do mapa usados nas tabelas deste texto foram reconstruídos sobre ela. A Silver da RAIS publicada, porém, é anterior à correção --- e, desde a migração, é ela que alimenta a Gold. Como a verificação incremental compara a \textbf{presença} de anos, e não o conteúdo, um ano corrigido não é detectado sozinho: 2022 precisa ser reprocessado sob demanda. Até lá, a Gold publicada e o \textit{dashboard} trazem a versão anterior de 2022. Afetados: os agregados da RAIS desse ano, o \textit{nowcast}, que usa a série de estoque no ajuste dos estimadores, e a linha de 2022 da série do hiato, cujos valores devem ser lidos como provisórios. \textbf{Não} afetados: a previsão do saldo mensal (construída sobre o CAGED), a análise de sobrevivência (calculada sobre 2024) e os perfis de município (janela de 2020 a 2025). \\
+        Substituição de partições na Silver em nuvem &
+        Nas primeiras execuções em nuvem da Silver do CAGED, os arquivos de cada partição foram gravados fora da pasta da tabela e com nome diferente do usado pela camada migrada. Eles não chegaram a ser lidos --- as consultas leem só a pasta de cada tabela ---, mas também não atualizaram a camada. A correção precisa garantir as duas coisas ao mesmo tempo: gravar na pasta certa e com o mesmo nome do arquivo que substitui, sob pena de passar a contar a partição em dobro (\autoref{sec:publicacao}). Depois dela, os arquivos gravados fora do lugar precisam ser removidos do repositório. \\
+        Concluir a cadeia em nuvem &
+        A consolidação das tabelas do CAGED em um arquivo por ano e a unificação das duas gerações formam hoje uma etapa própria do \textit{pipeline}. A última tentativa em nuvem falhou por um erro de diretório, já corrigido, e uma execução completa ainda precisa ser confirmada. Até lá, o repositório traz a versão consolidada anterior, em um arquivo por tabela. \\
+        Regenerar as tabelas deste texto a partir do repositório &
+        O \textit{script} que gera as tabelas numéricas deste texto ainda lê o \textit{data lake} local. A \autoref{tab:volumes} reflete a última medição local, que inclui a Silver de mercado completo, descontinuada na migração. No repositório público, a Bronze soma hoje 1.290 arquivos e 65,2~GB, contra os 1.190 arquivos e 56,3~GB da última medição local, e essa diferença ainda precisa ser conciliada. \\
         Verificação de reprodutibilidade da RAIS &
         O teste de recontagem a partir do dado bruto (\autoref{sec:reprodutibilidade}) foi feito para o CAGED. O equivalente para a RAIS ainda não foi executado. \\
         Confronto com os painéis oficiais &
         A comparação dos agregados com os painéis do PDET, prevista na proposta, foi feita de forma pontual e precisa ser sistematizada por unidade federativa e ano. \\
         Registro visual da interface &
-        O capítulo de resultados descreve o \textit{dashboard} e o mapa, mas não traz capturas de tela. A versão final deve incluí-las. \\
+        O capítulo de resultados descreve o \textit{dashboard}, o mapa e o grafo de execução do \textit{pipeline}, mas não traz capturas de tela. A versão final deve incluí-las. \\
         \bottomrule
     \end{tabularx}
     \\[4pt]
@@ -67,6 +67,6 @@ A primeira é medir \textbf{retenção por gênero} cruzando as duas bases: o CA
 
 A segunda é a \textbf{decomposição regional} do crescimento, no estilo \textit{shift-share}, separando quanto do crescimento de cada estado se explica pela composição setorial e quanto por dinamismo próprio. O dado já está na camada; falta o método.
 
-A terceira é de engenharia: documentar a linhagem do \textit{pipeline} de forma navegável. A procedência já existe no dado, linha a linha, mas não há hoje uma visão de conjunto das dependências entre as tabelas da camada Gold. Ferramentas de transformação declarativa geram esse grafo automaticamente, e a camada Gold --- composta de agregados em SQL --- é a parte do projeto que se beneficiaria dessa migração, sem necessidade de reescrever a ingestão ou a camada tratada.
+A terceira é de engenharia: documentar a linhagem do \textit{pipeline} de forma navegável. A migração resolveu metade do problema --- o grafo de dependências entre as etapas é exibido pela plataforma de integração contínua a cada execução ---, e a procedência já existe no dado, linha a linha. Falta a mesma visão entre as tabelas dentro da Gold. Ferramentas de transformação declarativa geram esse grafo automaticamente, e a camada Gold --- composta de agregados em SQL --- é a parte do projeto que se beneficiaria dessa adoção, sem necessidade de reescrever a ingestão ou a camada tratada.
 
-Por fim, a plataforma foi construída para ser reaproveitada. O desenho --- ingestão sem transformação, tradução por dicionários oficiais com procedência, recorte declarado e auditado, camada analítica em formato aberto e publicação dos dados tratados --- não tem nada de específico do mercado de tecnologia. Aplicá-lo a outro recorte ocupacional, ou a outra base governamental brasileira de grande volume, é questão de trocar a definição do recorte e os dicionários de tradução.
+Por fim, a plataforma foi construída para ser reaproveitada. O desenho --- ingestão sem transformação, tradução por dicionários oficiais com procedência, recorte declarado e auditado, camada analítica em formato aberto, execução automatizada e dados tratados públicos --- não tem nada de específico do mercado de tecnologia. Aplicá-lo a outro recorte ocupacional, como engenharia, saúde ou educação, ou a outra base governamental brasileira de grande volume, é questão de trocar a definição do recorte e os dicionários de tradução. O primeiro passo nessa direção já foi dado: uma tabela de referência com a hierarquia oficial dos códigos de CBO e de CNAE, e uma coluna de categoria preenchida para o recorte de TI, foi publicada junto dos demais conjuntos de dados. Hoje o recorte ainda é lido de listas no código; quando o \textit{pipeline} passar a lê-lo dessa tabela, um recorte novo poderá ser definido marcando códigos nela, sem alterar as etapas de processamento.

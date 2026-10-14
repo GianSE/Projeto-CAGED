@@ -102,7 +102,7 @@ Esta consulta aplica o recorte de tecnologia ao microdado bruto de um mês e com
 WITH rotulado AS (
     SELECT subclasse,
            lpad(regexp_replace(trim(cbo2002ocupacao), '[^0-9]', '', 'g'), 6, '0') AS cbo6
-    FROM read_parquet('hf://datasets/Gianpedro/bronze_caged/caged_mov/ano=2025/mes=6/*.parquet')
+    FROM read_parquet('hf://datasets/Gianpedro/bronze-caged/caged_mov/ano=2025/mes=6/*.parquet')
 ),
 cru AS (
     SELECT count(*) AS linhas FROM rotulado
@@ -114,7 +114,7 @@ cru AS (
 ),
 publicado AS (
     SELECT count(*) AS linhas
-    FROM read_parquet('hf://datasets/Gianpedro/caged-tecnologia/caged_mov/ano_particao=2025/mes_particao=6/*.parquet')
+    FROM read_parquet('hf://datasets/Gianpedro/silver-caged-ti/caged_mov/ano_particao=2025/mes_particao=6/*.parquet')
 )
 SELECT cru.linhas AS no_dado_cru, publicado.linhas AS na_camada_publicada,
        cru.linhas - publicado.linhas AS diferenca
@@ -130,7 +130,7 @@ Esta consulta recupera a origem de qualquer descrição aplicada pelo \textit{pi
                    caption={Procedência das traduções de uma coluna codificada},
                    label={lst:procedencia}]
 SELECT DISTINCT tabela, coluna, planilha, aba, caminho_ftp, extraido_em
-FROM read_parquet('hf://datasets/Gianpedro/bronze_caged/dicionarios.parquet')
+FROM read_parquet('hf://datasets/Gianpedro/bronze-caged/dicionarios.parquet')
 WHERE coluna = 'sexo';
 \end{lstlisting}
 

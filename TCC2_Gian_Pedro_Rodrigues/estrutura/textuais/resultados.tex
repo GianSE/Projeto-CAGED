@@ -3,7 +3,7 @@
 \chapter{Resultados e Discussão}
 \label{cap:resultados}
 
-Este capítulo apresenta os resultados em três blocos. O primeiro trata da plataforma como artefato de engenharia: o que foi construído, quanto custa consultá-la e se o resultado é reproduzível. O segundo relata os achados de qualidade do dado --- defeitos encontrados na fonte e um erro de método cometido e corrigido durante o trabalho. O terceiro responde, uma a uma, às cinco perguntas de pesquisa da \autoref{quadro:perguntas}.
+Este capítulo apresenta os resultados em três blocos. O primeiro trata da plataforma como artefato de engenharia: o que foi construído, quanto custa consultá-la, se o resultado é reproduzível e como ela opera em nuvem. O segundo relata os achados de qualidade do dado --- defeitos encontrados na fonte e um erro de método cometido e corrigido durante o trabalho. O terceiro responde, uma a uma, às cinco perguntas de pesquisa da \autoref{quadro:perguntas}.
 
 Todas as tabelas numéricas deste capítulo são \textbf{geradas a partir da camada Gold} por um \textit{script} do repositório do projeto, e não digitadas. A decisão tem motivo: durante o trabalho, uma lista de códigos mantida à mão passou a divergir do recorte efetivamente aplicado, e o texto afirmou por algum tempo algo que o dado não dizia.
 
@@ -15,9 +15,9 @@ O \textit{pipeline} ingeriu os microdados da RAIS de 2007 a 2025 e do CAGED de 2
 
 \input{estrutura/tabelas-geradas/tab-linhas-camada.tex}
 
-A redução de volume entre as camadas é informativa: os 56~GB de microdados brutos tornam-se pouco mais de 1~GB quando restritos ao recorte de tecnologia e convertidos para Parquet com compressão. É essa redução que torna viável consultar a série inteira em um computador pessoal.
+A redução de volume entre as camadas é informativa: os 56~GB de microdados brutos tornam-se pouco mais de 1~GB quando restritos ao recorte de tecnologia e convertidos para Parquet com compressão. É essa redução que torna viável processar e consultar a série inteira sem infraestrutura dedicada: dentro de um executor gratuito do GitHub Actions, a partir do \textit{dashboard} em nuvem ou de um computador pessoal.
 
-O número de arquivos importa tanto quanto o volume. A camada nasceu com 2.111 arquivos de menos de 2~MB --- um por arquivo de entrada ---, e foi consolidada em 628, um por partição, conforme descrito na \autoref{sec:arquitetura}. Depois da consolidação, uma contagem completa dos 23,3 milhões de vínculos de TI da RAIS responde em 0,4~segundo, lendo apenas os rodapés de metadados dos 19 arquivos da tabela. O ganho não vem de \textit{hardware}, e sim de pedir ao formato o que ele sabe responder sem ler dado.
+O número de arquivos importa tanto quanto o volume. A camada nasceu com 2.111 arquivos de menos de 2~MB --- um por arquivo de entrada ---, e foi consolidada em 628, um por partição, conforme descrito na \autoref{sec:arquitetura}. Depois da consolidação, uma contagem completa dos 23,3 milhões de vínculos de TI da RAIS respondia em 0,4~segundo, em medição feita antes da migração, lendo apenas os rodapés de metadados dos 19 arquivos da tabela. O ganho não vem de \textit{hardware}, e sim de pedir ao formato o que ele sabe responder sem ler dado.
 
 \section{Reprodutibilidade do Recorte}
 \label{sec:reprodutibilidade}
@@ -31,6 +31,13 @@ A validação mais exigente da plataforma não é comparar agregados com painéi
 \end{itemize}
 
 A consulta é executável por terceiros sem acesso à infraestrutura do projeto, porque as duas pontas --- bronze e camada tratada --- estão publicadas. É esse o sentido operacional de reprodutibilidade adotado aqui: não ``o código está disponível'', mas ``a afirmação pode ser recontada da fonte''.
+
+\section{O \textit{Pipeline} em Execução na Nuvem}
+\label{sec:execucao-nuvem}
+
+A Gold inteira coube com folga em um executor gratuito do GitHub Actions. Em uma execução de outubro de 2026, ainda com a Gold em etapa única, as nove tabelas de agregados da RAIS foram construídas em cerca de dois minutos, as duas tabelas territoriais em menos de dois minutos, e os quatro modelos em cerca de dez minutos --- dos quais pouco mais de seis só na decomposição salarial, que soma 57 decomposições ao longo dos dezenove anos da série. Para os modelos, a estimativa registrada na fase local era de cerca de quinze minutos. Os tempos são de uma única execução e servem como ordem de grandeza, não como medida de desempenho: os executores não têm configuração fixa, razão pela qual as etapas de Bronze registram os recursos de cada executor recebido.
+
+O resultado mais relevante dessa etapa, porém, não é o tempo. É que a plataforma deixou de depender de uma máquina específica estar ligada, com espaço livre e com as bibliotecas certas funcionando, para continuar atualizada --- as três condições que, na fase local, falharam em algum momento (\autoref{subsec:migracao}).
 
 \section{Achados de Qualidade do Dado}
 \label{sec:achados-qualidade}
@@ -190,7 +197,7 @@ A camada de apresentação foi organizada pelas cinco perguntas de pesquisa, e n
 
 A versão final tem sete abas: uma de abertura com a argumentação completa, uma por pergunta de pesquisa, cada uma abrindo com a resposta antes da evidência, e uma de método e limitações. Há ainda um modo de apresentação, que transforma o mesmo conteúdo em telas cheias para projeção, com os números vindos das mesmas tabelas da camada Gold --- não há como as duas versões divergirem.
 
-O \textit{dashboard} está implantado em nuvem e consome os dados publicados, não a infraestrutura local. Essa separação é o que permite que ele continue funcionando sem a máquina de desenvolvimento ligada.
+O \textit{dashboard} está implantado em nuvem e lê, pelo DuckDB, os mesmos repositórios de dados em que o \textit{pipeline} grava: a Silver de TI para as consultas com filtro livre e a Gold para os agregados e os modelos. Não há etapa de publicação entre os dois, de modo que um mês novo processado pelo \textit{pipeline} aparece na interface sem nenhuma ação manual.
 
 \section{Síntese das Respostas}
 

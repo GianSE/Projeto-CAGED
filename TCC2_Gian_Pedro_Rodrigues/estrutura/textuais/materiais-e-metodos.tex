@@ -67,10 +67,10 @@ A \autoref{tab:crispdm-fases} sintetiza o mapeamento entre as fases do CRISP-DM 
         \midrule
         \textbf{Entendimento do Negócio}  & Caracterização do mercado de TI brasileiro e formulação das cinco perguntas de pesquisa da \autoref{quadro:perguntas}, que passaram a organizar tanto os resultados quanto a interface. \\
         \textbf{Entendimento dos Dados}   & Levantamento dos \textit{layouts} de cada ano, extração dos dicionários oficiais a partir das planilhas de \textit{layout} do servidor público e auditoria da tradução dos códigos; identificação dos defeitos de fonte relatados na \autoref{sec:achados-qualidade}. \\
-        \textbf{Preparação dos Dados}     & Construção das camadas Bronze, Silver, Silver de TI e Gold; definição e posterior revisão do recorte de tecnologia; harmonização de nomes de coluna, tipagem de campos numéricos e agrupamento dos arquivos por partição. \\
+        \textbf{Preparação dos Dados}     & Construção das camadas Bronze, Silver (restrita ao recorte de TI) e Gold; definição e posterior revisão do recorte de tecnologia; harmonização de nomes de coluna, tipagem de campos numéricos e agrupamento dos arquivos por partição. \\
         \textbf{Modelagem}                & Modelos SARIMA sobre o saldo mensal; estimador de \textit{nowcast} do estoque; tábua de vida e modelo de risco em tempo discreto para a permanência no vínculo; decomposição de Oaxaca-Blinder do hiato salarial; agrupamento de municípios por $k$-médias. \\
         \textbf{Avaliação}                & Validação de origem móvel com MAE e RMSE contra \textit{baseline} ingênuo sazonal; validação do \textit{nowcast} com um ano retido do treinamento; verificação de reprodutibilidade confrontando o dado bruto com a camada publicada. \\
-        \textbf{Implantação}              & Publicação das camadas tratadas e dos agregados como conjuntos de dados abertos; implantação do \textit{dashboard} em nuvem consumindo esses dados; publicação do código-fonte em repositório público. \\
+        \textbf{Implantação}              & Migração do \textit{data lake} e do processamento para a nuvem, com execução automatizada e incremental; implantação do \textit{dashboard} consumindo o próprio \textit{data lake} público; publicação do código-fonte em repositório público. \\
         \bottomrule
     \end{tabular}
     \\[4pt]
@@ -102,6 +102,8 @@ Em vez de transcrever essas correspondências para o código-fonte, o trabalho e
 
 Duas decisões dessa etapa merecem registro, porque a alternativa falha em silêncio. A primeira é que o dicionário é indexado \textbf{por tabela}: o mesmo código significa coisas diferentes em gerações diferentes do CAGED, e um \textit{join} sem essa restrição duplica linhas e infla as contagens. A segunda é que a comparação de chaves é numérica, e não textual: o microdado da RAIS traz códigos com zero à esquerda (\texttt{'01'}) e a planilha de \textit{layout} traz o mesmo código sem ele (\texttt{'1'}). Comparados como texto, apenas os códigos de dois dígitos casam, e a tradução dos demais sai vazia sem gerar erro algum.
 
+Na arquitetura em nuvem, as planilhas convertidas ficam em um repositório próprio, separado dos microdados. O \textit{pipeline} verifica todo mês se o servidor público passou a ter planilhas de \textit{layout} ainda não extraídas e avisa quando isso ocorre, mas não as incorpora sozinho: a extração é executada manualmente, com conferência do resultado. A assimetria é deliberada. Um mês de microdados que deixe de ser processado é uma ausência visível; um dicionário substituído sem conferência produz traduções erradas sem erro algum, e esse é o modo de falha mais silencioso do projeto.
+
 \section{O Recorte de Tecnologia}
 \label{sec:recorte}
 
@@ -130,7 +132,7 @@ A família 2031 permaneceu representada por um único código, \textbf{203105 (p
 \section{Arquitetura Implementada}
 \label{sec:arquitetura}
 
-A plataforma foi organizada em cinco camadas, da obtenção dos dados na fonte até a entrega ao usuário. A \autoref{fig:arquitetura} mostra o fluxo e os componentes.
+A plataforma foi construída primeiro sobre infraestrutura local --- um \textit{data lake} em MinIO na máquina de desenvolvimento, com as etapas disparadas manualmente --- e migrada, na fase final do trabalho, para uma arquitetura executada inteiramente em nuvem. Esta seção descreve a arquitetura final; os motivos da migração estão na \autoref{subsec:migracao}. A \autoref{fig:arquitetura} mostra os componentes.
 
 \begin{figure}[htbp]
     \centering
@@ -144,53 +146,54 @@ A plataforma foi organizada em cinco camadas, da obtenção dos dados na fonte a
                        minimum width=12.5cm, minimum height=12mm, align=center,
                        fill=black!3},
         comp/.style={rectangle, rounded corners=2pt, draw=black!60,
-                     minimum width=2.3cm, minimum height=10mm, align=center,
+                     minimum width=2.6cm, minimum height=10mm, align=center,
                      fill=white, font=\footnotesize},
         rotulo/.style={font=\footnotesize\itshape, anchor=east},
-        seta/.style={-{Stealth[length=2.2mm]}, thick, black!70}
+        seta/.style={-{Stealth[length=2.2mm]}, thick, black!70},
+        bidir/.style={{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]}, thick, black!70}
     ]
 
     % Camada 1 - Fontes
     \node[camada, fill=blue!8] (fontes) {};
     \node[rotulo] at ([xshift=-2mm]fontes.west) {Fontes};
-    \node[comp] at ([xshift=-4.2cm]fontes.center) {RAIS \\ (MTE)};
-    \node[comp] at ([xshift=-1.4cm]fontes.center) {CAGED \\ (MTE)};
-    \node[comp] at ([xshift=1.4cm]fontes.center)  {Planilhas de \\ \textit{layout} (MTE)};
-    \node[comp] at ([xshift=4.2cm]fontes.center)  {Municípios \\ (IBGE)};
+    \node[comp] at ([xshift=-4.5cm]fontes.center) {RAIS \\ (MTE)};
+    \node[comp] at ([xshift=-1.5cm]fontes.center) {CAGED \\ (MTE)};
+    \node[comp] at ([xshift=1.5cm]fontes.center)  {Planilhas de \\ \textit{layout} (MTE)};
+    \node[comp] at ([xshift=4.5cm]fontes.center)  {Municípios \\ (IBGE)};
 
-    % Camada 2 - Armazenamento (Medalhao)
-    \node[camada, fill=orange!10, below=of fontes] (armaz) {};
-    \node[rotulo] at ([xshift=-2mm]armaz.west) {Armazenamento};
-    \node[comp, fill=orange!20] at ([xshift=-4.2cm]armaz.center) {Bronze \\ 56,3 GB};
-    \node[comp, fill=gray!15]   at ([xshift=-1.4cm]armaz.center) {Silver \\ 14,1 GB};
-    \node[comp, fill=gray!25]   at ([xshift=1.4cm]armaz.center)  {Silver de TI \\ 1,3 GB};
-    \node[comp, fill=yellow!25] (gold) at ([xshift=4.2cm]armaz.center) {Gold \\ 25 tabelas};
-    \node[font=\scriptsize] at ([yshift=-7mm, xshift=5.0cm]armaz.center) {MinIO (S3)};
-
-    % Camada 3 - Processamento
-    \node[camada, fill=green!8, below=of armaz] (proc) {};
+    % Camada 2 - Processamento (executores efemeros)
+    \node[camada, fill=green!8, below=of fontes] (proc) {};
     \node[rotulo] at ([xshift=-2mm]proc.west) {Processamento};
-    \node[comp] at ([xshift=-3.0cm]proc.center) {DuckDB \\ (SQL analítico)};
-    \node[comp] at ([xshift=0cm]proc.center)    {\textit{statsmodels} \\ (SARIMA, OLS)};
-    \node[comp] at ([xshift=3.0cm]proc.center)  {\textit{scikit-learn} \\ ($k$-médias)};
+    \node[comp] at ([xshift=-4.5cm]proc.center) {GitHub Actions \\ (\textit{workflows})};
+    \node[comp] at ([xshift=-1.5cm]proc.center) {DuckDB \\ (SQL analítico)};
+    \node[comp] at ([xshift=1.5cm]proc.center)  {\textit{statsmodels} \\ (SARIMA, OLS)};
+    \node[comp] at ([xshift=4.5cm]proc.center)  {\textit{scikit-learn} \\ ($k$-médias)};
+    \node[font=\scriptsize] at ([yshift=-7.5mm, xshift=4.3cm]proc.center) {executores efêmeros};
 
-    % Camada 4 - Publicacao
-    \node[camada, fill=violet!8, below=of proc] (pub) {};
-    \node[rotulo] at ([xshift=-2mm]pub.west) {Publicação};
-    \node[comp] at ([xshift=-2.2cm]pub.center) {Hugging Face \\ (dados abertos)};
-    \node[comp] at ([xshift=2.2cm]pub.center)  {GitHub \\ (código-fonte)};
+    % Camada 3 - Armazenamento e publicacao (Hugging Face Hub)
+    \node[camada, fill=orange!10, minimum height=19mm, below=10mm of proc] (armaz) {};
+    \node[rotulo, align=right] at ([xshift=-2mm]armaz.west) {Armazenamento \\ e publicação};
+    \node[comp, fill=orange!20] at ([xshift=-4.5cm]armaz.center)
+        {Bronze \\ {\scriptsize\ttfamily bronze-caged} \\ {\scriptsize\ttfamily bronze-rais}};
+    \node[comp, fill=blue!10] at ([xshift=-1.5cm]armaz.center)
+        {Dicionários \\ {\scriptsize\ttfamily mte-dicionarios}};
+    \node[comp, fill=gray!20] at ([xshift=1.5cm]armaz.center)
+        {Silver de TI \\ {\scriptsize\ttfamily silver-caged-ti} \\ {\scriptsize\ttfamily silver-rais-ti}};
+    \node[comp, fill=yellow!25] at ([xshift=4.5cm]armaz.center)
+        {Gold \\ {\scriptsize\ttfamily gold-analise-} \\ {\scriptsize\ttfamily mercado-ti}};
+    \node[font=\scriptsize] at ([yshift=-11mm, xshift=4.3cm]armaz.center) {Hugging Face Hub (público)};
 
-    % Camada 5 - Apresentacao
-    \node[camada, fill=red!6, below=of pub] (apres) {};
+    % Camada 4 - Apresentacao
+    \node[camada, fill=red!6, below=10mm of armaz] (apres) {};
     \node[rotulo] at ([xshift=-2mm]apres.west) {Apresentação};
-    \node[comp] at ([xshift=-2.2cm]apres.center) {Streamlit local \\ (sobre MinIO)};
-    \node[comp] at ([xshift=2.2cm]apres.center)  {Streamlit em nuvem \\ (sobre dados publicados)};
+    \node[comp] at ([xshift=-2.2cm]apres.center) {\textit{Dashboard} Streamlit \\ (em nuvem)};
+    \node[comp] at ([xshift=2.2cm]apres.center)  {Consulta por terceiros \\ (DuckDB, \texttt{hf://})};
 
     % Setas verticais
-    \draw[seta] (fontes.south) -- (armaz.north);
-    \draw[seta] (armaz.south)  -- (proc.north);
-    \draw[seta] (proc.south)   -- (pub.north);
-    \draw[seta] (pub.south)    -- (apres.north);
+    \draw[seta]  (fontes.south) -- (proc.north);
+    \draw[bidir] (proc.south)   -- node[left, font=\scriptsize, align=right]
+        {lê a camada anterior, \\ grava a seguinte} (armaz.north);
+    \draw[seta]  (armaz.south)  -- (apres.north);
 
     \end{tikzpicture}%
     }
@@ -198,7 +201,103 @@ A plataforma foi organizada em cinco camadas, da obtenção dos dados na fonte a
     Fonte: Autoria própria.
 \end{figure}
 
-A diferença mais importante em relação ao desenho proposto no TCC~1 é a camada de Publicação, que não estava prevista e será justificada na \autoref{sec:publicacao}. Há também uma subdivisão não prevista no Armazenamento: entre a Silver e a Gold passou a existir uma \textbf{Silver de TI}, que é a camada tratada já restrita ao recorte. Ela existe porque as duas perguntas que a plataforma precisa responder têm granularidades diferentes: a análise setorial exige o mercado completo (para comparar TI com o resto), enquanto o \textit{dashboard} e os modelos operam só sobre o recorte, e repetir o filtro em cada consulta custaria uma varredura dos 14,1~GB da Silver a cada interação.
+Três diferenças estruturais separam esta arquitetura da implementação local que a precedeu.
+
+A primeira é que armazenamento e publicação deixaram de ser etapas distintas. Na versão local, o \textit{data lake} ficava em MinIO e uma rotina copiava as camadas tratadas para um repositório público de dados; na versão final, o repositório público \textbf{é} o \textit{data lake}. Cada camada da arquitetura Medalhão é um conjunto de dados no Hugging Face Hub --- seis ao todo, relacionados no \autoref{quadro:repositorios} ---, e cada etapa lê a camada anterior e grava a seguinte diretamente nele.
+
+\begin{quadro}[htbp]
+    \centering
+    \caption{Conjuntos de dados que compõem o \textit{data lake}}
+    \label{quadro:repositorios}
+    \footnotesize
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{%
+        >{\raggedright\arraybackslash\hsize=0.95\hsize}X
+        >{\raggedright\arraybackslash\hsize=0.45\hsize}X
+        >{\raggedright\arraybackslash\hsize=1.60\hsize}X}
+        \toprule
+        \rowcolor{black!8}
+        \textbf{Repositório} & \textbf{Camada} & \textbf{Conteúdo} \\
+        \midrule
+        \texttt{bronze-caged} & Bronze & Microdados das cinco tabelas do CAGED, convertidos para Parquet sem alteração de conteúdo, e a tabela de procedência dos dicionários. \\
+        \texttt{bronze-rais} & Bronze & Microdados de vínculos e de estabelecimentos da RAIS, nas mesmas condições. \\
+        \texttt{mte-dicionarios} & Referência & Planilhas de \textit{layout} do MTE convertidas para Parquet, uma por aba, usadas na tradução dos códigos. \\
+        \texttt{silver-caged-ti} & Silver & CAGED traduzido e restrito ao recorte de tecnologia, particionado por ano e mês; e, na raiz, a versão consolidada em um arquivo por tabela e ano, para consulta por HTTP. \\
+        \texttt{silver-rais-ti} & Silver & RAIS traduzida e restrita ao recorte de tecnologia, particionada por ano. \\
+        \texttt{gold-analise-mercado-ti} & Gold & Agregados que o \textit{dashboard} consome e resultados materializados dos modelos. \\
+        \bottomrule
+    \end{tabularx}
+    \\[4pt]
+    Fonte: Autoria própria.
+\end{quadro}
+
+A segunda é que o processamento não tem mais máquina fixa. Cada etapa roda em um executor efêmero do GitHub Actions, que é criado para a execução, instala as dependências, processa e é descartado. Nada persiste entre execuções além do que foi gravado no repositório de dados --- o que, como se verá na \autoref{subsec:orquestracao-pipeline}, determinou a forma de dividir o trabalho.
+
+A terceira é a supressão de uma camada. A implementação local tinha, entre a Silver e a Gold, uma subdivisão: uma Silver de mercado completo, com 14,1~GB, e uma Silver de TI, com 1,3~GB, restrita ao recorte. Na migração, verificou-se que nenhuma tabela da Gold em uso lia a Silver de mercado completo --- todas partem da Silver de TI ---, e mantê-la significaria traduzir a cada execução cerca de dez vezes mais dado do que a análise consome. A Silver passou a ser construída já restrita ao recorte, diretamente a partir da Bronze.
+
+\subsection{Orquestração do \textit{Pipeline}}
+\label{subsec:orquestracao-pipeline}
+
+O \textit{pipeline} é dividido em nove etapas, cada uma um \textit{workflow} próprio do GitHub Actions, com uma única responsabilidade. Um décimo \textit{workflow}, o orquestrador, encadeia as nove pela dependência real entre elas, e não por horários escalonados: uma etapa só começa quando as etapas de que depende terminaram. A \autoref{fig:dag} mostra o grafo resultante.
+
+\begin{figure}[htbp]
+    \centering
+    \caption{Grafo de dependências entre os \textit{workflows} do \textit{pipeline}}
+    \label{fig:dag}
+    \resizebox{0.95\textwidth}{!}{%
+    \begin{tikzpicture}[
+        every node/.style={font=\footnotesize},
+        wf/.style={rectangle, rounded corners=2pt, draw=black!70, thick,
+                   minimum width=3.3cm, minimum height=8mm, align=center,
+                   font=\footnotesize\ttfamily},
+        seta/.style={-{Stealth[length=2mm]}, thick, black!65},
+        coluna/.style={font=\small\bfseries}
+    ]
+    \node[coluna] at (0, 3.5)   {Bronze};
+    \node[coluna] at (4.8, 3.5) {Silver};
+    \node[coluna] at (9.8, 3.5) {Gold};
+
+    \node[wf, fill=orange!20] (bc) at (0, 2.1)  {bronze-caged};
+    \node[wf, fill=blue!10]   (di) at (0, 0)    {dicionario};
+    \node[wf, fill=orange!20] (br) at (0, -2.1) {bronze-rais};
+
+    \node[wf, fill=gray!20] (sc) at (4.8, 1.05)  {silver-caged-ti};
+    \node[wf, fill=gray!20] (sr) at (4.8, -1.05) {silver-rais-ti};
+
+    \node[wf, fill=yellow!25] (gc) at (9.8, 2.5)  {gold-caged-consolidado};
+    \node[wf, fill=yellow!25] (gt) at (9.8, 0.85) {gold-territorio};
+    \node[wf, fill=yellow!25] (gr) at (9.8, -0.8) {gold-rais};
+    \node[wf, fill=yellow!25] (gm) at (9.8, -2.5) {gold-modelos};
+
+    \draw[seta] (bc) -- (sc);
+    \draw[seta] (di) -- (sc);
+    \draw[seta] (di) -- (sr);
+    \draw[seta] (br) -- (sr);
+
+    \draw[seta] (sc) -- (gc);
+    \draw[seta] (sc) -- (gt);
+    \draw[seta] (sr) -- (gt);
+    \draw[seta] (sr) -- (gr);
+    \draw[seta] (gr) -- (gm);
+    \draw[seta] (sr.south east) to[out=-35, in=180] (gm.west);
+    \draw[seta] (sc.east) to[out=-20, in=165] ([yshift=1mm]gm.north west);
+    \end{tikzpicture}%
+    }
+    \\[4pt]
+    Fonte: Autoria própria.
+\end{figure}
+
+O orquestrador roda toda semana e também pode ser disparado manualmente a partir de qualquer camada --- só a Silver e a Gold, quando a Bronze já está em dia, ou só a Gold, quando se quer apenas reagregar. Cada etapa, por sua vez, continua podendo ser executada isoladamente, o que permite testar ou repetir uma peça sem disparar as demais.
+
+\paragraph{Processamento incremental.} As etapas de Bronze e de Silver têm duas fases. A primeira, de verificação, compara o que existe na origem com o que já está publicado e produz a lista de pares (tabela, ano) pendentes; na Silver, essa comparação é feita só pela listagem dos arquivos, sem ler nenhum dado. A segunda fase processa cada par pendente em um \textit{job} próprio, até quatro em paralelo. Por padrão, a verificação olha o ano corrente e o anterior, que concentram a publicação de dado novo pelo MTE; anos mais antigos são reprocessados sob demanda, informando o intervalo na execução manual. O particionamento por ano, descrito adiante, é o que torna essa unidade de trabalho possível: reprocessar um ano não toca nos demais.
+
+\paragraph{Identidade da origem.} Para decidir se um arquivo do servidor público já foi ingerido, a verificação da Bronze não compara nomes de arquivo, e sim o caminho de origem gravado em cada linha da camada. A razão é concreta: arquivos grandes da RAIS são divididos em partes no momento da publicação, e 146 arquivos da Bronze da RAIS são partes de um original que, com o nome inteiro, não existe no repositório. Uma comparação por nome concluiria que esses originais nunca foram ingeridos e os baixaria de novo a cada execução. Quando a própria verificação falha --- por erro de rede, por exemplo ---, o item é tratado como já existente: deixar de atualizar um ano é uma falha visível e recuperável, enquanto ingerir duas vezes o mesmo arquivo duplicaria o dado sem erro algum.
+
+\paragraph{Gold dividida por dependência.} A Gold é reconstruída inteira a cada execução, porque é pequena e barata de agregar; o custo do \textit{pipeline} está na tradução, e não na agregação. Ela foi dividida em quatro etapas pela dependência efetiva de dados de cada parte, verificada no código: os agregados da RAIS dependem só da Silver da RAIS; o território (mapa e perfis de município) depende das duas Silvers, e os perfis dependem do mapa da mesma rodada, por isso os dois ficam juntos; os consolidados do CAGED dependem só da Silver do CAGED; e os modelos dependem das duas Silvers e do estoque anual produzido pelos agregados da RAIS, que é usado pelo \textit{nowcast}. Como os executores não compartilham disco, cada etapa publica a própria parte ao terminar, e a etapa de modelos baixa do repositório o estoque anual de que precisa antes de começar. A divisão foi motivada por uma falha real: em uma das primeiras execuções em nuvem da Gold, ainda em etapa única, os consolidados do CAGED falharam depois que todas as outras partes já tinham terminado, e refazê-los exigia refazer tudo.
+
+\paragraph{Limites do serviço.} O repositório de dados recusa requisições acima de uma taxa máxima, com a resposta HTTP 429, tanto na listagem de arquivos quanto no \textit{download}. Dois ajustes foram necessários. O primeiro foi autenticar as leituras do DuckDB: o motor não usa sozinho o \textit{token} de acesso disponível no ambiente, e as leituras anônimas estão sujeitas a um limite menor. O segundo foi tolerar a recusa: as leituras são repetidas até seis vezes, com espera que dobra a cada tentativa a partir de oito segundos, e têm tempo máximo de resposta definido --- sem ele, uma conexão que para de responder sem devolver erro nunca aciona a nova tentativa e mantém o \textit{job} parado até o limite de duração do executor.
+
+\paragraph{Acompanhamento.} As etapas de Bronze registram, no início, os recursos do executor recebido (processadores, memória e disco), já que eles não são fixos entre execuções, e as etapas enviam notificações com o resultado --- se havia dado novo, o que foi processado e o que falhou --- por um \textit{bot} de mensagens. O próprio grafo da \autoref{fig:dag} é exibido pela interface do GitHub Actions a cada execução, com o estado de cada etapa.
 
 \subsection{Particionamento e Organização dos Arquivos}
 
@@ -219,16 +318,20 @@ A validação prevista na proposta --- confrontar os agregados com os painéis o
 
 As três verificações passaram sem apontamentos na camada final. Mais relevante que isso, porém, é o que elas encontraram durante a construção, relatado na \autoref{sec:achados-qualidade}.
 
-O trabalho de manutenção decorrente dessas verificações foi implementado como rotinas independentes e idempotentes --- harmonização de nomes, tipagem de colunas numéricas, remoção de colunas totalmente nulas, uniformização da profundidade das partições, consolidação de arquivos e aplicação da revisão do recorte --- todas disparáveis por um painel de controle local, com registro de execução em arquivo. Essa decisão de projeto foi o que viabilizou revisar o recorte sem reconstruir a camada: a revisão foi aplicada como poda das linhas excluídas mais complemento das novas, a partir da camada já tratada e da Bronze, em lugar de um reprocessamento integral que levaria dias.
+O trabalho de manutenção decorrente dessas verificações foi implementado, ainda na fase local, como rotinas independentes e idempotentes --- harmonização de nomes, tipagem de colunas numéricas, remoção de colunas totalmente nulas, uniformização da profundidade das partições, consolidação de arquivos e aplicação da revisão do recorte ---, disparadas por um painel de controle na máquina de desenvolvimento, com registro de execução em arquivo. Essa decisão de projeto foi o que viabilizou revisar o recorte sem reconstruir a camada: a revisão foi aplicada como poda das linhas excluídas mais complemento das novas, a partir da camada já tratada e da Bronze, em lugar de um reprocessamento integral que levaria dias.
+
+Essas rotinas foram corretivas: cada uma resolveu um defeito de uma camada já construída, e o resultado foi o que se publicou. Com a migração, elas e o painel foram retirados do código. A camada publicada já carrega as correções, e o construtor atual da Silver incorpora as duas mais importantes --- a harmonização dos nomes de coluna entre as eras de \textit{layout} e a tipagem dos campos numéricos, inclusive os gravados como texto ou com vírgula decimal ---, de modo que um ano novo não depende das rotinas antigas para entrar na camada.
 
 \section{Ferramentas Utilizadas}
 
 \begin{itemize}
     \item \textbf{Python}: toda a plataforma foi implementada em Python \cite{Python2024}, do \textit{download} no servidor público ao \textit{dashboard};
 
-    \item \textbf{MinIO}: hospeda o \textit{data lake} localmente, sem custo de nuvem durante o desenvolvimento \cite{MinIO2024}. Por implementar a API S3, permitiria migrar para um provedor externo sem alterar o código de acesso;
+    \item \textbf{GitHub Actions}: orquestra e executa o \textit{pipeline} \cite{GitHubActions2026}. Cada etapa é um \textit{workflow} versionado junto do código-fonte, que fica no mesmo repositório público do GitHub, e roda em um executor efêmero, sem servidor próprio e sem custo;
 
-    \item \textbf{DuckDB}: executa as consultas analíticas \cite{DuckDB2024}. A extensão \texttt{httpfs} lê os arquivos Parquet diretamente do \textit{bucket} S3 e, na versão publicada, do repositório de dados abertos, o que dispensa importação prévia. Os resultados são devolvidos como Apache Arrow ou \textit{dataframe}, sem conversão intermediária \cite{PyArrow2024};
+    \item \textbf{Hugging Face Hub}: hospeda o \textit{data lake}, com um repositório de dados por camada \cite{HuggingFaceDatasets2026}. A biblioteca \textit{huggingface\_hub} lista e publica os arquivos, agrupando os envios de uma etapa em um único \textit{commit}, de modo que uma etapa interrompida não deixa a camada com metade dos arquivos novos;
+
+    \item \textbf{DuckDB}: executa as consultas analíticas \cite{DuckDB2024}. A extensão \texttt{httpfs} lê os arquivos Parquet diretamente do repositório de dados, pelo protocolo \texttt{hf://}, o que dispensa importação prévia e cópia local. Os resultados são devolvidos como Apache Arrow ou \textit{dataframe}, sem conversão intermediária \cite{PyArrow2024};
 
     \item \textbf{Apache Parquet}: formato de todas as camadas, com compressão \textit{zstd} \cite{ApacheParquet2024};
 
@@ -236,7 +339,7 @@ O trabalho de manutenção decorrente dessas verificações foi implementado com
 
     \item \textbf{scikit-learn}: agrupamento de municípios por $k$-médias e cálculo do coeficiente de silhueta \cite{Pedregosa2011};
 
-    \item \textbf{Streamlit}: camada de apresentação \cite{Streamlit2024}, que consulta o DuckDB sob demanda a cada filtro, mantendo os arquivos Parquet como única fonte de verdade.
+    \item \textbf{Streamlit}: camada de apresentação \cite{Streamlit2024}, implantada em nuvem, que consulta o DuckDB sob demanda a cada filtro sobre o próprio \textit{data lake} público, mantendo os arquivos Parquet como única fonte de verdade.
 \end{itemize}
 
 \section{Modelos Aplicados}
@@ -288,14 +391,27 @@ A decomposição foi calculada ano a ano, de 2007 a 2025, o que permite observar
 
 Para caracterizar a geografia do mercado além do \textit{ranking} de maiores estoques, os municípios foram agrupados por $k$-médias \cite{MacQueen1967} sobre seis variáveis padronizadas de trajetória: logaritmo do estoque, estoque por mil habitantes, crescimento no período, intensidade de fluxo, rotatividade e remuneração mediana em salários mínimos. O número de grupos foi escolhido pelo coeficiente de silhueta \cite{Rousseeuw1987}, e não fixado \textit{a priori}.
 
-\section{Publicação dos Dados e Implantação}
+\section{Publicação dos Dados e Migração para a Nuvem}
 \label{sec:publicacao}
 
-A proposta do TCC~1 previa publicar o código-fonte e mencionava a possibilidade de publicar os dados tratados como conjunto aberto. Essa possibilidade se tornou necessidade por uma razão de implantação: o \textit{data lake} em MinIO é local, e um \textit{dashboard} hospedado em nuvem não tem acesso a ele. Publicar as camadas tratadas em um repositório público de dados resolveu os dois problemas de uma vez --- deu à aplicação implantada uma fonte acessível e tornou a análise reproduzível por terceiros sem a infraestrutura do projeto.
+A proposta do TCC~1 previa publicar o código-fonte e mencionava a possibilidade de publicar os dados tratados como conjunto aberto. Essa possibilidade se tornou necessidade primeiro por uma razão de implantação: o \textit{data lake} em MinIO era local, e um \textit{dashboard} hospedado em nuvem não tinha acesso a ele. Publicar as camadas tratadas em um repositório público de dados resolveu os dois problemas de uma vez --- deu à aplicação implantada uma fonte acessível e tornou a análise reproduzível por terceiros sem a infraestrutura do projeto.
 
-O repositório escolhido foi o Hugging Face Hub \cite{HuggingFaceDatasets2026}, por três características: aceita arquivos Parquet mantendo a estrutura de partições, serve os arquivos por HTTP com suporte a requisições parciais (o que permite ao DuckDB ler apenas os trechos necessários) e versiona os conjuntos com histórico de \textit{commits}. Foram publicados cinco conjuntos: as duas camadas Bronze, a camada tratada do CAGED, a camada tratada da RAIS e os agregados da Gold. Essa prática atende aos princípios FAIR de dados científicos \cite{WilkinsonFair2016}, ao tornar os dados localizáveis, acessíveis, interoperáveis e reutilizáveis.
+O repositório escolhido foi o Hugging Face Hub \cite{HuggingFaceDatasets2026}, por três características: aceita arquivos Parquet mantendo a estrutura de partições, serve os arquivos por HTTP com suporte a requisições parciais (o que permite ao DuckDB ler apenas os trechos necessários) e versiona os conjuntos com histórico de \textit{commits}. Essa prática atende aos princípios FAIR de dados científicos \cite{WilkinsonFair2016}, ao tornar os dados localizáveis, acessíveis, interoperáveis e reutilizáveis.
 
-Um cuidado operacional merece nota, porque é fonte de erro silencioso: o envio de arquivos para o repositório apenas \textbf{acrescenta}. Quando a consolidação de arquivos descrita na \autoref{sec:arquitetura} renomeou os arquivos da camada, as versões antigas permaneceram publicadas, e uma consulta que lê a pasta inteira passaria a somar as duas --- contando as linhas em dobro, sem erro. A rotina de publicação passou a remover, em um mesmo \textit{commit}, os arquivos que não existem mais na camada local.
+\subsection{Migração para a Nuvem}
+\label{subsec:migracao}
+
+Nessa primeira forma, a publicação era uma cópia: o \textit{data lake} de trabalho continuava local, e uma rotina enviava ao repositório o que já estava pronto. Três problemas da operação local levaram a inverter a relação e fazer do repositório público o próprio \textit{data lake}.
+
+O primeiro foi de espaço. O \textit{data lake} local chegou a 72~GB, em um disco com 27~GB livres, e a maior parte desse volume era a Bronze --- que, a essa altura, já estava integralmente publicada. A cópia local era, portanto, uma duplicata de 56~GB.
+
+O segundo foi de ambiente de execução. A política de integridade de código do Windows (\textit{Smart App Control}) passou a bloquear as bibliotecas nativas de \textit{scipy}, \textit{statsmodels} e \textit{scikit-learn}, o que impedia recalcular os modelos na máquina de desenvolvimento. As alternativas eram desligar a política, operação irreversível sem reinstalação do sistema, ou executar essas etapas em Linux. Os executores do GitHub Actions são máquinas Linux, e foi neles que os modelos voltaram a ser calculados.
+
+O terceiro foi de atualização. Na versão local, incorporar um mês novo do CAGED dependia de alguém executar as etapas à mão, na ordem certa, e de lembrar de republicar depois. Enquanto isso não acontecia, o \textit{dashboard} implantado consumia uma versão desatualizada, sem nenhum sinal disso na interface. Com o orquestrador da \autoref{subsec:orquestracao-pipeline}, a verificação passou a ser semanal e automática, e como o \textit{dashboard} lê o mesmo repositório em que o \textit{pipeline} grava, não existe mais uma cópia publicada que possa ficar para trás.
+
+A migração foi feita em duas etapas. Antes de mover qualquer processamento, um \textit{workflow} piloto mediu, a partir de um executor, a leitura do repositório de dados, para confirmar que a latência e os limites do serviço permitiam processar a Bronze de lá. Confirmada a viabilidade, cada etapa do \textit{pipeline} foi reescrita para ler e gravar diretamente no repositório, e o código ligado ao MinIO foi removido --- o \textit{pipeline} não tem mais um modo local.
+
+Um cuidado operacional merece nota, porque é fonte de erro silencioso e acompanha o projeto desde a fase local: o envio de arquivos para o repositório apenas \textbf{acrescenta}. Quando a consolidação de arquivos descrita na \autoref{sec:arquitetura} renomeou os arquivos da camada, as versões antigas permaneceram publicadas, e uma consulta que lê a pasta inteira passaria a somar as duas --- contando as linhas em dobro, sem erro. A rotina de publicação daquela fase passou a remover, em um mesmo \textit{commit}, os arquivos que não existiam mais na camada local. Na versão em nuvem, em que não há camada local para comparar, a mesma propriedade exige que o reprocessamento de uma partição grave seus arquivos sempre com o mesmo nome, para que a versão nova substitua a anterior em vez de somar-se a ela.
 
 \section{Revisões em Relação à Proposta do TCC~1}
 \label{sec:revisoes}
@@ -319,7 +435,8 @@ Projetos de dados raramente terminam idênticos ao que foram propostos, e declar
         Modelo Prophet & Família SARIMA, com seis especificações e \textit{baseline} ingênuo sazonal & A série mensal construída é completa, sem lacunas: as vantagens do Prophet (tolerância a dados faltantes e \textit{changepoints} manuais) não se aplicavam. A especificação SARIMA foi escolhida por validação de origem móvel, e o ganho sobre o \textit{baseline} foi medido. O Prophet não foi avaliado, o que fica declarado como limitação. \\
         Projeção até 2030 & Horizonte de 18 meses & Um modelo mensal validado em cinco dobras não sustenta horizonte de cinco anos. Já em doze meses o intervalo de predição cruza o zero, isto é, o modelo não distingue saldo positivo de negativo nessa distância. Projetar até 2030 produziria um número sem conteúdo informativo. \\
         Previsão como única modelagem & Previsão, \textit{nowcast}, sobrevivência, decomposição salarial e agrupamento & As perguntas de pesquisa formuladas na fase de Entendimento do Negócio pedem mais do que extrapolação de série: qualidade do emprego, equidade e geografia exigem métodos próprios. \\
-        Publicação apenas do código & Publicação do código e de cinco conjuntos de dados abertos & Requisito de implantação: o \textit{dashboard} em nuvem não alcança o \textit{data lake} local. Ver \autoref{sec:publicacao}. \\
+        Publicação apenas do código & Publicação do código e de seis conjuntos de dados abertos, que formam o próprio \textit{data lake} & Primeiro, requisito de implantação: o \textit{dashboard} em nuvem não alcançava o \textit{data lake} local. Depois, consequência da migração para a nuvem. Ver \autoref{sec:publicacao}. \\
+        \textit{Data lake} compatível com a API S3 (MinIO), em infraestrutura local & \textit{Data lake} em repositórios públicos do Hugging Face Hub, com processamento em executores do GitHub Actions, orquestrado por dependência e incremental por ano & Falta de espaço em disco, bloqueio das bibliotecas nativas de modelagem no ambiente de desenvolvimento e dependência de execução manual para manter a plataforma atualizada. Ver \autoref{subsec:migracao}. \\
         Validação contra painéis oficiais & Validação contra painéis oficiais, auditoria automatizada e teste de reprodutibilidade a partir do dado bruto & A auditoria encontrou defeitos na fonte que a comparação de agregados não revelaria, por se cancelarem na soma. \\
         Recorte por CBO & Recorte pela união de CNAE e CBO, com as duas lentes preservadas & Restringir a ocupações eliminaria do escopo quem trabalha em empresa de TI em função de apoio, e impediria a comparação entre as duas lentes --- que se tornou o achado central do trabalho. \\
         \bottomrule
@@ -335,4 +452,6 @@ A RAIS e o CAGED cobrem exclusivamente o mercado \textbf{formal}. Trabalhadores 
 
 A localização de cada vínculo é a do estabelecimento declarante, não a do trabalho efetivo. Como empresas de TI escolhem onde se registrar por motivos tributários, municípios com incentivo fiscal aparecem com concentração acima da real. O trabalho remoto agrava a distorção, e não há no dado público informação que permita corrigi-la --- a limitação é declarada, não contornada.
 
-A reprodutibilidade foi tratada em três níveis. O código-fonte completo do \textit{pipeline} e do \textit{dashboard} está publicado em repositório público. As camadas tratadas e os agregados estão publicados como dados abertos, de modo que as análises podem ser refeitas sem executar a ingestão. E a própria correspondência entre o dado bruto e o dado publicado é verificável por uma consulta, apresentada na \autoref{sec:reprodutibilidade}.
+A arquitetura em nuvem troca a dependência de uma máquina pela dependência de dois serviços gratuitos de terceiros. Os limites de cada um --- a taxa de requisições do repositório de dados e a memória, o disco e a duração máxima de cada execução do GitHub Actions --- não são contratuais e podem mudar, e uma mudança de política de qualquer dos dois exigiria adaptar o \textit{pipeline}. O risco é atenuado por dois fatos: os dados estão em formato aberto, transferível para qualquer armazenamento de objetos, e as etapas são programas Python comuns, que a plataforma de integração contínua apenas agenda, encadeia e executa.
+
+A reprodutibilidade foi tratada em quatro níveis. O código-fonte completo do \textit{pipeline} e do \textit{dashboard} está publicado em repositório público. As camadas tratadas e os agregados estão publicados como dados abertos, de modo que as análises podem ser refeitas sem executar a ingestão. A própria correspondência entre o dado bruto e o dado publicado é verificável por uma consulta, apresentada na \autoref{sec:reprodutibilidade}. E o \textit{pipeline} inteiro é reexecutável por terceiros: como os \textit{workflows} estão versionados junto do código, uma cópia do repositório, com credenciais próprias e os nomes dos repositórios de destino ajustados, executa a mesma cadeia nos mesmos executores, sem instalar nada localmente.

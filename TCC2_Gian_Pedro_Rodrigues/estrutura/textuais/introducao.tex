@@ -73,26 +73,27 @@ Para dar foco à segunda face, o trabalho se organiza em torno de uma pergunta s
 
 \section{Objetivos}
 
-O objetivo geral foi desenvolver uma plataforma integrada para análise histórica, visualização interativa e previsão do mercado de trabalho em TI no Brasil, a partir dos microdados da RAIS e do CAGED, com base em uma arquitetura Medalhão sobre \textit{data lake} compatível com a interface do \textit{Amazon Simple Storage Service} (S3).
+O objetivo geral foi desenvolver uma plataforma integrada para análise histórica, visualização interativa e previsão do mercado de trabalho em TI no Brasil, a partir dos microdados da RAIS e do CAGED, com base em uma arquitetura Medalhão executada em nuvem, com o \textit{data lake} em repositórios públicos de dados e o processamento automatizado por \textit{workflows} de integração contínua.
 
 \subsection{Objetivos Específicos}
 
 \begin{itemize}
     \item Implementar um \textit{pipeline} de engenharia de dados nas camadas Bronze, Silver e Gold, processando os microdados brutos da RAIS (2007--2025) e do CAGED (2007--2026);
+    \item Automatizar a execução desse \textit{pipeline} em nuvem, com etapas encadeadas por dependência real que detectam dado novo no servidor público e reprocessam apenas os anos afetados, sem depender de infraestrutura local;
     \item Definir e documentar o recorte de tecnologia, delimitado pela união de dois critérios --- atividade econômica do estabelecimento (CNAE) e ocupação do vínculo (CBO) ---, mantendo os dois como rótulos analisáveis em vez de um filtro único;
     \item Traduzir os códigos dos microdados pelos dicionários oficiais do próprio MTE, preservando o código original ao lado da descrição, e auditar o resultado dessa tradução;
     \item Desenvolver um \textit{dashboard} interativo em Streamlit que consulte os arquivos Parquet por meio do DuckDB, sem etapa de importação prévia;
     \item Aplicar modelos de série temporal da família SARIMA ao saldo mensal de empregos, selecionando a especificação por validação de origem móvel contra um \textit{baseline} ingênuo sazonal;
     \item Estimar o estoque do ano corrente por \textit{nowcast}, combinando o estoque do último ano publicado da RAIS com o fluxo já divulgado pelo CAGED, e validar o estimador retendo um ano do treinamento;
     \item Analisar a qualidade do emprego gerado (remuneração relativa, permanência e sobrevivência no vínculo) e as diferenças salariais por sexo e raça/cor, por decomposição de Oaxaca-Blinder;
-    \item Publicar as camadas tratadas e os agregados como conjuntos de dados abertos, de modo que a análise possa ser reproduzida sem acesso à infraestrutura local do projeto.
+    \item Publicar as camadas tratadas e os agregados como conjuntos de dados abertos, de modo que a análise possa ser reproduzida por terceiros sem executar a ingestão.
 \end{itemize}
 
 \section{Justificativa}
 
 Do lado científico, a pesquisa oferece um retrato quantitativo do mercado de TI nacional cobrindo quase duas décadas, com detalhamento por ocupação (CBO), unidade federativa, setor econômico (CNAE) e porte de estabelecimento, um nível de granularidade que costuma ficar fora das análises publicadas sobre o setor. Esse tipo de evidência pode alimentar decisões na formulação de políticas de formação profissional, no planejamento de recursos humanos e em estudos de economia do trabalho.
 
-No plano técnico, o \textit{pipeline} mostra que é possível substituir infraestruturas pesadas e caras por ferramentas leves e de código aberto, como DuckDB, Apache Parquet e MinIO, sem perder desempenho analítico em volumes dessa ordem. Consultas interativas passam a ser feitas direto sobre o \textit{data lake}, dispensando a etapa de importação prévia que costuma encarecer e atrasar esse tipo de projeto. O mesmo desenho pode ser reaproveitado em outras bases governamentais brasileiras de grande volume.
+No plano técnico, o \textit{pipeline} mostra que é possível substituir infraestruturas pesadas e caras por ferramentas leves e de código aberto, como DuckDB e Apache Parquet, sem perder desempenho analítico em volumes dessa ordem. Consultas interativas passam a ser feitas direto sobre o \textit{data lake}, dispensando a etapa de importação prévia que costuma encarecer e atrasar esse tipo de projeto. Mostra também que esse \textit{pipeline} pode rodar sem servidor próprio e sem custo de infraestrutura: o armazenamento fica em repositórios públicos de dados e o processamento, em executores de integração contínua, de modo que a plataforma se atualiza sozinha na verificação semanal seguinte à publicação de um mês novo pelo MTE. O mesmo desenho pode ser reaproveitado em outras bases governamentais brasileiras de grande volume.
 
 Há ainda uma terceira contribuição, que não estava prevista na proposta e emergiu da execução: a auditoria sistemática do dado publicado pelo MTE revelou defeitos concretos na fonte --- entre eles uma conversão de salário mínimo invertida, colunas numéricas gravadas como texto e códigos de ocupação em uso que não constam de nenhum dicionário oficial. Documentar esses defeitos, e os testes que os detectam, é informação útil para qualquer pesquisa futura que use as mesmas bases.
 
