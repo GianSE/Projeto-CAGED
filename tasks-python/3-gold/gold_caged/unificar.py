@@ -41,7 +41,7 @@ from gold_caged.cnae_secao import sql_secao
 from gold_unificado.dicionario_canonico import sql_canonico
 from _utils.escopo_tecnologia import sql_area_ti
 
-DIR_SAIDA = Path(__file__).resolve().parents[2] / "publicacao" / "detalhado"
+DIR_SAIDA = Path(__file__).resolve().parents[3] / "publicacao" / "detalhado"
 
 TAMANHO_ROW_GROUP = 50_000
 
@@ -134,6 +134,10 @@ def sql_unificado(con, ano: int) -> str | None:
 
 
 def unificar_ano(con, ano: int) -> bool:
+    # Idempotente e barato (exist_ok=True): não depende de quem chamou já ter
+    # criado o diretório — main() fazia isso, mas gold-analise-mercado-ti.py
+    # chama esta função direto, sem passar por main().
+    DIR_SAIDA.mkdir(parents=True, exist_ok=True)
     destino = DIR_SAIDA / f"caged_ti_{ano}.parquet"
     sql = sql_unificado(con, ano)
     if not sql:

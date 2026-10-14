@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 REPO = "Gianpedro/gold-analise-mercado-ti"
-RAIZ = Path(__file__).resolve().parents[2]
+RAIZ = Path(__file__).resolve().parents[3]
 DIR_LOCAL = RAIZ / "publicacao" / "gold"
 
 CARTAO = """---

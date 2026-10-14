@@ -36,7 +36,7 @@ from pathlib import Path
 from _utils import nuvem
 from _utils.nuvem import conectar_duckdb
 
-DIR_SAIDA = Path(__file__).resolve().parents[2] / "publicacao" / "detalhado"
+DIR_SAIDA = Path(__file__).resolve().parents[3] / "publicacao" / "detalhado"
 
 # Coluna de tempo de cada tabela, usada para ordenar dentro do ano (ver docstring).
 COLUNA_TEMPO = {
@@ -113,6 +113,10 @@ def consolidar_ano(con, tabela: str, ano: int) -> bool:
 
 
 def consolidar(con, tabela: str, ano_inicio: int = 0, ano_fim: int = 9999) -> int:
+    # Idempotente e barato (exist_ok=True): não depende de quem chamou já ter
+    # criado o diretório — main() fazia isso, mas gold-analise-mercado-ti.py
+    # chama esta função direto, sem passar por main().
+    DIR_SAIDA.mkdir(parents=True, exist_ok=True)
     anos = [a for a in anos_na_silver(con, tabela) if ano_inicio <= a <= ano_fim]
     if not anos:
         print(f"   ⏭️  {tabela}: sem anos na silver no recorte pedido")

@@ -24,7 +24,7 @@ Requer acesso ao MinIO (o mesmo `.env` do pipeline).
 import sys
 from pathlib import Path
 
-RAIZ_PROJETO = Path(__file__).resolve().parents[1]
+RAIZ_PROJETO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from extracao_ftp.config_extracao import (BUCKET_BRONZE, BUCKET_SILVER_TI,

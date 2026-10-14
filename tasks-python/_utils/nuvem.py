@@ -22,7 +22,7 @@ REPO_DICIONARIOS = os.getenv("REPO_DICIONARIOS", "Gianpedro/mte-dicionarios")
 DIR_TEMP = Path(os.getenv("STAGING_DIR") or ".") / "_staging"
 
 # Mesma pasta que o publicador da gold lê pra subir ao Hub.
-DIR_GOLD_LOCAL = Path(__file__).resolve().parents[1] / "publicacao" / "gold"
+DIR_GOLD_LOCAL = Path(__file__).resolve().parents[2] / "publicacao" / "gold"
 
 
 def repo_bronze(tabela: str) -> str:

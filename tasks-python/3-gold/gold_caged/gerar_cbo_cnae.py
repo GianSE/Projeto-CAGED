@@ -31,7 +31,7 @@ from _utils.escopo_tecnologia import (
     CNAE_TI,
 )
 
-DIR_SAIDA = Path(__file__).resolve().parents[2] / "publicacao" / "referencias"
+DIR_SAIDA = Path(__file__).resolve().parents[3] / "publicacao" / "referencias"
 
 REPO_DICIONARIOS = "Gianpedro/mte-dicionarios"
 FONTE_CBO = (f"hf://datasets/{REPO_DICIONARIOS}/novo_caged_legado_movimentacoes/"

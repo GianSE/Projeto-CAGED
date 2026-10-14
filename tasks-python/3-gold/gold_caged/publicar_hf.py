@@ -26,7 +26,7 @@ import re
 import sys
 from pathlib import Path
 
-DIR_DETALHADO = Path(__file__).resolve().parents[2] / "publicacao" / "detalhado"
+DIR_DETALHADO = Path(__file__).resolve().parents[3] / "publicacao" / "detalhado"
 
 CARTAO = """---
 license: odc-by
@@ -216,7 +216,7 @@ def main() -> int:
     #      colocar o token no .env simplesmente não teria efeito aqui.
     from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+    load_dotenv(Path(__file__).resolve().parents[3] / ".env")
     # `HF_TOKEN=` (vazio, como fica no .env antes de você colar o token) daria
     # string vazia — que o HfApi trataria como credencial e ignoraria o login
     # do CLI. Normaliza para None, que é o que faz ele usar o login guardado.
