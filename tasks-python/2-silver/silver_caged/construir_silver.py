@@ -53,10 +53,10 @@ def _colunas_bronze(con, tabela: str) -> list[str]:
     # (caged_ajustes mistura arquivo anual "ano=2002/arq.parquet" com mensal
     # "ano=2010/mes=1/arq.parquet"). ano_particao/mes_particao já vêm como
     # colunas de verdade em cada linha, gravadas na ingestão bronze.
-    caminho = nuvem.glob_bronze(tabela)
+    caminho = nuvem.fonte_bronze(tabela)
     try:
         return [r[0] for r in con.execute(
-            f"DESCRIBE SELECT * FROM read_parquet('{caminho}') LIMIT 0").fetchall()]
+            f"DESCRIBE SELECT * FROM read_parquet({caminho}) LIMIT 0").fetchall()]
     except Exception as e:
         print(f"   ⚠️  Não consegui ler o schema de {tabela}: {str(e)[:200]}")
         return []

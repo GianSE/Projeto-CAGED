@@ -56,10 +56,10 @@ TAMANHO_ROW_GROUP = 50_000
 def anos_na_silver(con, tabela: str) -> list[int]:
     from _utils import nuvem
 
-    origem = nuvem.glob_silver_ti(tabela)
+    origem = nuvem.fonte_silver_ti(tabela)
     try:
         return [r[0] for r in con.execute(
-            f"SELECT DISTINCT ano_particao FROM read_parquet('{origem}', union_by_name=true) "
+            f"SELECT DISTINCT ano_particao FROM read_parquet({origem}, union_by_name=true) "
             f"ORDER BY 1"
         ).fetchall()]
     except Exception:
@@ -69,7 +69,7 @@ def anos_na_silver(con, tabela: str) -> list[int]:
 def consolidar_ano(con, tabela: str, ano: int) -> bool:
     from _utils import nuvem
 
-    origem = nuvem.glob_silver_ti(tabela, f"ano_particao={ano}/**/*.parquet")
+    origem = nuvem.fonte_silver_ti(tabela, f"ano_particao={ano}/**/*.parquet")
     destino = DIR_SAIDA / f"{tabela}_{ano}.parquet"
 
     try:
@@ -81,7 +81,7 @@ def consolidar_ano(con, tabela: str, ano: int) -> bool:
         # diferente. O arquivo do ano carrega a união, com nulo nas colunas que
         # aquele ano não tinha — que é a informação correta.
         colunas = [r[0] for r in con.execute(
-            f"DESCRIBE SELECT * FROM read_parquet('{origem}', union_by_name=true) LIMIT 0"
+            f"DESCRIBE SELECT * FROM read_parquet({origem}, union_by_name=true) LIMIT 0"
         ).fetchall()]
     except Exception:
         print(f"   ⏭️  {tabela} {ano}: sem dados na silver, pulando")
@@ -92,7 +92,7 @@ def consolidar_ano(con, tabela: str, ano: int) -> bool:
 
     try:
         con.execute(f"""
-            COPY (SELECT * FROM read_parquet('{origem}', union_by_name=true) {ordem})
+            COPY (SELECT * FROM read_parquet({origem}, union_by_name=true) {ordem})
             TO '{destino.as_posix()}' (
                 FORMAT PARQUET,
                 COMPRESSION 'ZSTD',

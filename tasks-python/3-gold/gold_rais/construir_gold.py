@@ -54,8 +54,8 @@ from _utils import nuvem
 from _utils import escopo_tecnologia as esc
 from gold_unificado.dicionario_canonico import sql_canonico
 
-FONTE_VINC = nuvem.glob_silver_ti("rais_vinc")
-FONTE_ESTAB = nuvem.glob_silver_ti("rais_estab")
+FONTE_VINC = nuvem.fonte_silver_ti("rais_vinc")
+FONTE_ESTAB = nuvem.fonte_silver_ti("rais_estab")
 
 COL_CNAE = "cnae_20_subclasse"
 COL_CBO = "cbo_ocupacao_2002"
@@ -65,14 +65,14 @@ COL_CBO = "cbo_ocupacao_2002"
 # na mesma tabela — sem baseline, "TI paga 2,3x mais" não diz nada.
 BASE_VINC = f"""
     SELECT *, {esc.sql_classificacao(COL_CNAE, COL_CBO)}
-    FROM read_parquet('{FONTE_VINC}', hive_partitioning=true)
+    FROM read_parquet({FONTE_VINC}, hive_partitioning=true)
 """
 
 # O estabelecimento não tem ocupação — uma empresa não exerce CBO —, então só
 # a lente de setor se aplica.
 BASE_ESTAB = f"""
     SELECT *, {esc.sql_classificacao(COL_CNAE, None)}
-    FROM read_parquet('{FONTE_ESTAB}', hive_partitioning=true)
+    FROM read_parquet({FONTE_ESTAB}, hive_partitioning=true)
 """
 
 ATIVO = "vinculo_ativo_3112 = '1'"

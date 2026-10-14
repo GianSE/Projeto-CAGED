@@ -4,11 +4,12 @@ Ponte com o Hugging Face Hub — leitura (hf://, via DuckDB) e escrita
 gold. Sem MinIO: este é o único modo que o projeto roda hoje.
 
 Os dicionários do MTE (CBO, CNAE, escolaridade, ...) são a única parte que
-isto não deriva sozinho: mudam raramente, e continuam sendo publicados uma
-vez por `_utils/bootstrap_dicionarios_hf.py`, rodado localmente — os jobs
-de bronze/silver/gold só leem o que já está publicado.
+isto não deriva sozinho: mudam raramente, e são publicados à mão por
+`_utils/dicionario.py --modo extrair` — os jobs de bronze/silver/gold só
+leem o que já está publicado.
 """
 import os
+import re
 from pathlib import Path
 
 REPO_BRONZE_CAGED = os.getenv("REPO_BRONZE_CAGED", "Gianpedro/bronze-caged")
@@ -34,16 +35,69 @@ def repo_silver_ti(tabela: str) -> str:
 
 
 def fonte_leitura(repo: str, prefixo: str = "") -> str:
-    """`hf://datasets/<repo>/<prefixo>` — o DuckDB lê e globa direto, sem credencial."""
+    """`hf://datasets/<repo>/<prefixo>` — caminho de UM arquivo (ou glob, só no dashboard)."""
     prefixo = prefixo.lstrip("/")
     return f"hf://datasets/{repo}/{prefixo}" if prefixo else f"hf://datasets/{repo}"
 
 
-def glob_bronze(tabela: str, resto: str = "**/*.parquet") -> str:
-    return fonte_leitura(repo_bronze(tabela), f"{tabela}/{resto}")
+def _glob_para_regex(padrao: str) -> re.Pattern:
+    """Mesma semântica de glob do DuckDB: `**/` casa zero ou mais pastas, `*` e `?` não cruzam `/`."""
+    partes, i = [], 0
+    while i < len(padrao):
+        if padrao.startswith("**/", i):
+            partes.append("(?:[^/]+/)*")
+            i += 3
+        elif padrao.startswith("**", i):
+            partes.append(".*")
+            i += 2
+        elif padrao[i] == "*":
+            partes.append("[^/]*")
+            i += 1
+        elif padrao[i] == "?":
+            partes.append("[^/]")
+            i += 1
+        else:
+            partes.append(re.escape(padrao[i]))
+            i += 1
+    return re.compile("".join(partes))
+
+
+def fonte_parquet(repo: str, padrao: str) -> str:
+    """
+    Expressão pronta pra `read_parquet(...)` — o chamador NÃO põe aspas em
+    volta: é a lista explícita dos arquivos do repo que casam com o glob.
+
+    Passar o glob `hf://.../**/*.parquet` ao DuckDB faz ele listar o repo
+    pasta por pasta: medido, 86 chamadas à API só pra expandir `caged_mov`
+    (uma por ano/mês). Com vários jobs em paralelo, isso bate o limite de
+    taxa do Hub (HTTP 429) na listagem. Aqui a listagem é uma por repo e
+    processo (arquivos_remotos), e o DuckDB recebe os arquivos prontos — as
+    colunas de partição hive e o filtro por partição continuam funcionando.
+
+    Nada casando, devolve um padrão LOCAL que não existe: o DuckDB falha na
+    hora com "No files found", que os chamadores tratam como "ainda não
+    publicado". Devolver o glob hf:// seria pior que inútil: numa pasta que
+    ainda não existe no Hub (um ano novo, por exemplo) ele dá HTTP 404, e a
+    verificação da bronze leria isso como erro e assumiria "já existe".
+    """
+    padrao = padrao.lstrip("/")
+    regex = _glob_para_regex(padrao)
+    arquivos = sorted(a for a in arquivos_remotos(repo) if regex.fullmatch(a))
+    if not arquivos:
+        return f"'{DIR_TEMP.as_posix()}/_nada_no_hub/{repo.replace('/', '__')}/{padrao}'"
+    return "[" + ", ".join(f"'{fonte_leitura(repo, a)}'" for a in arquivos) + "]"
+
+
+def fonte_bronze(tabela: str, resto: str = "**/*.parquet") -> str:
+    return fonte_parquet(repo_bronze(tabela), f"{tabela}/{resto}")
+
+
+def fonte_silver_ti(tabela: str, resto: str = "**/*.parquet") -> str:
+    return fonte_parquet(repo_silver_ti(tabela), f"{tabela}/{resto}")
 
 
 def glob_silver_ti(tabela: str, resto: str = "**/*.parquet") -> str:
+    """Glob cru, só pro dashboard: ele não instala huggingface_hub, então não lista."""
     return fonte_leitura(repo_silver_ti(tabela), f"{tabela}/{resto}")
 
 
@@ -56,11 +110,28 @@ _cache_listagem: dict[str, set] = {}
 
 
 def arquivos_remotos(repo: str, forcar: bool = False) -> set:
-    """Lista (uma vez por processo, salvo --forcar) os arquivos já publicados."""
-    if forcar or repo not in _cache_listagem:
-        from huggingface_hub import HfApi
+    """
+    Lista (uma vez por processo, salvo `forcar`) os arquivos já publicados.
 
-        _cache_listagem[repo] = set(HfApi().list_repo_files(repo, repo_type="dataset"))
+    A listagem também cai no limite de taxa do Hub; espera e tenta de novo
+    (8s, 16, 32, 64, 128). Repo inexistente não é transitório: sobe na hora.
+    """
+    if forcar or repo not in _cache_listagem:
+        import time
+        from huggingface_hub import HfApi
+        from huggingface_hub.errors import RepositoryNotFoundError
+
+        for espera in (8, 16, 32, 64, 128, None):
+            try:
+                _cache_listagem[repo] = set(HfApi().list_repo_files(repo, repo_type="dataset"))
+                break
+            except RepositoryNotFoundError:
+                raise
+            except Exception as e:
+                if espera is None:
+                    raise
+                print(f"      ⏳ listagem de {repo} falhou ({str(e)[:80]}), esperando {espera}s...")
+                time.sleep(espera)
     return _cache_listagem[repo]
 
 
@@ -124,7 +195,7 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
     con.execute("INSTALL httpfs; LOAD httpfs; SET enable_progress_bar=false;")
     aplicar_secret_hf(con)
     # "ano={ano}*" casa tanto ano=2022 quanto ano=2022_parcial.
-    origem = glob_bronze(tabela) if tabela_inteira else glob_bronze(tabela, f"ano={ano}*/**/*.parquet")
+    origem = fonte_bronze(tabela) if tabela_inteira else fonte_bronze(tabela, f"ano={ano}*/**/*.parquet")
 
     # Limite de taxa do Hub: a janela observada na prática foi de até 300s.
     # 6 tentativas com espera crescente (8s, 16, 32, 64, 128, 256 ≈ 504s)
@@ -134,7 +205,7 @@ def caminhos_fonte_ingeridos(tabela: str, ano: int) -> set:
     for tentativa in range(6):
         try:
             linhas = con.execute(
-                f"SELECT DISTINCT caminho_fonte FROM read_parquet('{origem}', union_by_name=true)"
+                f"SELECT DISTINCT caminho_fonte FROM read_parquet({origem}, union_by_name=true)"
             ).fetchall()
             fontes = {r[0] for r in linhas if r[0]}
             _cache_fontes[chave] = fontes

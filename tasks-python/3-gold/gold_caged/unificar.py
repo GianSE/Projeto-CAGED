@@ -49,13 +49,13 @@ TAMANHO_ROW_GROUP = 50_000
 def anos_disponiveis(con) -> list[int]:
     from _utils import nuvem
 
-    mov = nuvem.glob_silver_ti("caged_mov")
-    old = nuvem.glob_silver_ti("caged_old")
+    mov = nuvem.fonte_silver_ti("caged_mov")
+    old = nuvem.fonte_silver_ti("caged_old")
     anos = set()
     for origem in (mov, old):
         try:
             anos.update(r[0] for r in con.execute(
-                f"SELECT DISTINCT ano_particao FROM read_parquet('{origem}', union_by_name=true)"
+                f"SELECT DISTINCT ano_particao FROM read_parquet({origem}, union_by_name=true)"
             ).fetchall())
         except Exception:
             pass
@@ -64,7 +64,7 @@ def anos_disponiveis(con) -> list[int]:
 
 def _existe(con, origem: str) -> bool:
     try:
-        con.execute(f"SELECT 1 FROM read_parquet('{origem}') LIMIT 0")
+        con.execute(f"SELECT 1 FROM read_parquet({origem}) LIMIT 0")
         return True
     except Exception:
         return False
@@ -78,8 +78,8 @@ def sql_unificado(con, ano: int) -> str | None:
     """
     from _utils import nuvem
 
-    mov = nuvem.glob_silver_ti("caged_mov", f"ano_particao={ano}/**/*.parquet")
-    old = nuvem.glob_silver_ti("caged_old", f"ano_particao={ano}/**/*.parquet")
+    mov = nuvem.fonte_silver_ti("caged_mov", f"ano_particao={ano}/**/*.parquet")
+    old = nuvem.fonte_silver_ti("caged_old", f"ano_particao={ano}/**/*.parquet")
 
     bloco_mov = f"""
         SELECT
@@ -102,7 +102,7 @@ def sql_unificado(con, ano: int) -> str | None:
             salario                            AS salario,
             tipomovimentacao_descricao         AS tipo_movimentacao,
             'Novo CAGED'                       AS geracao
-        FROM read_parquet('{mov}')
+        FROM read_parquet({mov})
     """ if _existe(con, mov) else None
 
     bloco_old = f"""
@@ -126,7 +126,7 @@ def sql_unificado(con, ano: int) -> str | None:
             salario_mensal                     AS salario,
             tipo_mov_desagregado_descricao     AS tipo_movimentacao,
             'CAGED antigo'                     AS geracao
-        FROM read_parquet('{old}')
+        FROM read_parquet({old})
     """ if _existe(con, old) else None
 
     blocos = [b for b in (bloco_mov, bloco_old) if b]

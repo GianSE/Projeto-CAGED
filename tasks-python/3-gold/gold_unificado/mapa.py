@@ -46,12 +46,12 @@ CAGED = f"""
     SELECT year(competenciamov_data) AS ano,
            {UF} AS uf, {MUNICIPIO} AS municipio, {CODIGO} AS cod_municipio,
            saldomovimentacao AS saldo
-    FROM read_parquet('{nuvem.glob_silver_ti("caged_mov")}',
+    FROM read_parquet({nuvem.fonte_silver_ti("caged_mov")},
                       hive_partitioning=true)
     WHERE competenciamov_data IS NOT NULL AND municipio_descricao IS NOT NULL
     UNION ALL
     SELECT year(competencia_declarada_data), {UF}, {MUNICIPIO}, {CODIGO}, saldo_mov
-    FROM read_parquet('{nuvem.glob_silver_ti("caged_old")}',
+    FROM read_parquet({nuvem.fonte_silver_ti("caged_old")},
                       hive_partitioning=true)
     WHERE competencia_declarada_data IS NOT NULL AND municipio_descricao IS NOT NULL
 """
@@ -61,7 +61,7 @@ RAIS = f"""
            {CODIGO} AS cod_municipio,
            vinculo_ativo_3112, vl_remun_media_sm,
            {esc.sql_classificacao('cnae_20_subclasse', 'cbo_ocupacao_2002')}
-    FROM read_parquet('{nuvem.glob_silver_ti("rais_vinc")}',
+    FROM read_parquet({nuvem.fonte_silver_ti("rais_vinc")},
                       hive_partitioning=true)
     WHERE municipio_descricao IS NOT NULL
 """

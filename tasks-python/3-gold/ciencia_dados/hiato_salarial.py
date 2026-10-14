@@ -91,7 +91,7 @@ def _sql(ano: int) -> str:
             CASE WHEN {esc.sql_filtro_cnae('cnae_20_subclasse')}
                  THEN 'Empresa de TI' ELSE 'Fora do setor de TI' END AS setor,
             upper(split_part(municipio_descricao, '-', 1)) AS regiao
-        FROM read_parquet('{nuvem.glob_silver_ti('rais_vinc', f'ano_particao={ano}/**/*.parquet')}')
+        FROM read_parquet({nuvem.fonte_silver_ti('rais_vinc', f'ano_particao={ano}/**/*.parquet')})
         WHERE {ATIVO}
           AND {esc.sql_filtro_cbo('cbo_ocupacao_2002')}
           AND vl_remun_media_sm > 0 AND vl_remun_media_sm <= {TETO_SM}

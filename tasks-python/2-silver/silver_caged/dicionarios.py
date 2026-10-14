@@ -117,8 +117,8 @@ def _caminho(namespace: str, aba: str, planilha: str | None = None) -> str:
     from _utils import nuvem
 
     if planilha:
-        return nuvem.fonte_leitura(nuvem.REPO_DICIONARIOS, f"{namespace}/{planilha}/{aba}.parquet")
-    return nuvem.fonte_leitura(nuvem.REPO_DICIONARIOS, f"{namespace}/**/{aba}.parquet")
+        return "'" + nuvem.fonte_leitura(nuvem.REPO_DICIONARIOS, f"{namespace}/{planilha}/{aba}.parquet") + "'"
+    return nuvem.fonte_parquet(nuvem.REPO_DICIONARIOS, f"{namespace}/**/{aba}.parquet")
 
 
 def existe(namespace: str, aba: str, planilha: str | None = None) -> bool:
@@ -137,7 +137,7 @@ def _sql_2col(caminho: str) -> str:
         SELECT DISTINCT
             trim(col_00) AS codigo,
             trim(col_01) AS descricao
-        FROM read_parquet('{caminho}')
+        FROM read_parquet({caminho})
         WHERE trim(col_00) NOT IN ('Código', 'CÓDIGO', 'codigo')
           AND col_00 IS NOT NULL
           AND col_01 IS NOT NULL
@@ -152,7 +152,7 @@ def _sql_colon(caminho: str, coluna: str = "col_00") -> str:
         SELECT DISTINCT
             trim(substr("{coluna}", 1, strpos("{coluna}", ':') - 1)) AS codigo,
             trim(substr("{coluna}", strpos("{coluna}", ':') + 1)) AS descricao
-        FROM read_parquet('{caminho}')
+        FROM read_parquet({caminho})
         WHERE "{coluna}" IS NOT NULL AND strpos("{coluna}", ':') > 0
     """
 
@@ -170,7 +170,7 @@ def _sql_cagestid(caminho: str, campo: str) -> str:
                 ) AS campo,
                 col_03 AS categoria,
                 col_04 AS valor_fonte
-            FROM (SELECT *, row_number() OVER () AS rowid FROM read_parquet('{caminho}'))
+            FROM (SELECT *, row_number() OVER () AS rowid FROM read_parquet({caminho}))
         )
         SELECT DISTINCT
             trim(valor_fonte) AS codigo,
@@ -197,7 +197,7 @@ def _sql_titulo_codigo(caminho: str, col_desc: str = "col_00", col_cod: str = "c
         SELECT DISTINCT
             trim("{col_cod}") AS codigo,
             trim("{col_desc}") AS descricao
-        FROM read_parquet('{caminho}')
+        FROM read_parquet({caminho})
         WHERE "{col_cod}" IS NOT NULL AND "{col_desc}" IS NOT NULL
           AND lower(trim("{col_cod}")) NOT IN ({lista})
     """

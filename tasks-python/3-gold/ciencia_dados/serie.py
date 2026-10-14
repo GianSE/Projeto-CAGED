@@ -34,11 +34,11 @@ SQL = f"""
 WITH uniao AS (
     SELECT competenciamov_data AS competencia,
            saldomovimentacao   AS saldo
-    FROM read_parquet('{nuvem.glob_silver_ti('caged_mov')}',
+    FROM read_parquet({nuvem.fonte_silver_ti('caged_mov')},
                       hive_partitioning=true)
     UNION ALL
     SELECT competencia_declarada_data, saldo_mov
-    FROM read_parquet('{nuvem.glob_silver_ti('caged_old')}',
+    FROM read_parquet({nuvem.fonte_silver_ti('caged_old')},
                       hive_partitioning=true)
 )
 SELECT date_trunc('month', competencia)          AS mes,
