@@ -260,17 +260,25 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    total = 0
+    from huggingface_hub import CommitOperationAdd
+
+    operacoes, total = [], 0
     for arquivo in arquivos + [cartao]:
         tam = arquivo.stat().st_size
         print(f"   ⬆️  {arquivo.name:<25} {tam / 1e6:>7.1f} MB")
-        api.upload_file(
-            path_or_fileobj=str(arquivo),
-            path_in_repo=arquivo.name,
-            repo_id=args.repo,
-            repo_type="dataset",
-        )
+        operacoes.append(CommitOperationAdd(path_in_repo=arquivo.name, path_or_fileobj=str(arquivo)))
         total += tam
+
+    # Um commit só, não um por arquivo: o Hub limita a taxa de commits por
+    # repositório (~70 commits seguidos arriscariam esbarrar nisso), e assim
+    # a publicação é atômica — ou entram todos os anos, ou nenhum. O envio
+    # dos arquivos em si já é paralelo dentro do create_commit.
+    api.create_commit(
+        repo_id=args.repo,
+        repo_type="dataset",
+        operations=operacoes,
+        commit_message=f"Consolidados por ano: {len(arquivos)} arquivo(s)",
+    )
 
     base = f"https://huggingface.co/datasets/{args.repo}/resolve/main"
     print(f"\n🏁 {total / 1e6:.1f} MB publicados.")
