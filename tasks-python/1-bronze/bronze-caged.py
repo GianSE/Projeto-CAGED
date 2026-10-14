@@ -30,7 +30,9 @@ from extracao_ftp.config_extracao import DIR_DOWNLOAD, DIR_EXTRAIDO, preparar_di
 from extracao_ftp.estado import EstadoLake, Manifesto  # noqa: E402
 from extracao_ftp.ftp_utils import ClienteFTP  # noqa: E402
 from extracao_ftp.transformador import converter  # noqa: E402
-from _utils import nuvem, telegram  # noqa: E402
+from _utils import log, nuvem, telegram  # noqa: E402
+
+log.ativar_horario()
 
 DATASETS = ("novo_caged", "caged", "caged_ajustes")
 

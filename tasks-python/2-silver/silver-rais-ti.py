@@ -19,7 +19,9 @@ sys.path.insert(0, str(_AQUI.parent))
 
 from silver_rais.construir_silver import construir  # noqa: E402
 from silver_rais import mapeamento as mp  # noqa: E402
-from _utils import nuvem, telegram  # noqa: E402
+from _utils import log, nuvem, telegram  # noqa: E402
+
+log.ativar_horario()
 
 
 def _argumentos():

@@ -19,7 +19,9 @@ _AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(_AQUI))
 sys.path.insert(0, str(_AQUI.parent))
 
-from _utils import nuvem, telegram  # noqa: E402
+from _utils import log, nuvem, telegram  # noqa: E402
+
+log.ativar_horario()
 
 
 def _semear_geo_municipios() -> None:

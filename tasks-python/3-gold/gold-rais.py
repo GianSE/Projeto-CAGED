@@ -18,7 +18,9 @@ _AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(_AQUI))
 sys.path.insert(0, str(_AQUI.parent))
 
-from _utils import telegram  # noqa: E402
+from _utils import log, telegram  # noqa: E402
+
+log.ativar_horario()
 
 
 def main() -> int:

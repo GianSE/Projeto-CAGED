@@ -30,7 +30,9 @@ sys.path.insert(0, str(_AQUI.parent / "1-bronze"))
 
 from extracao_ftp.config_extracao import FTP_BASE, FTP_HOST  # noqa: E402
 from extracao_ftp.ftp_utils import ClienteFTP  # noqa: E402
-from _utils import nuvem, telegram  # noqa: E402
+from _utils import log, nuvem, telegram  # noqa: E402
+
+log.ativar_horario()
 
 PASTAS_LAYOUT = [
     ("NOVO CAGED", False),
