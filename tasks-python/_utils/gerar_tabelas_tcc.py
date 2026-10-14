@@ -104,8 +104,8 @@ print("Gerando tabelas em", DESTINO)
 
 # ------------------------------------------------- volumes das camadas
 linhas = []
-for bucket, rotulo in ((BUCKET_BRONZE, "Bronze"), ("silver", "Silver (mercado completo)"),
-                       (BUCKET_SILVER_TI, "Silver de TI"), ("gold", "Gold")):
+for bucket, rotulo in ((BUCKET_BRONZE, "Bronze"), (BUCKET_SILVER_TI, "Silver de TI"),
+                       ("gold", "Gold")):
     infos = fs.find(bucket, detail=True)
     arqs = [v["size"] for k, v in infos.items() if k.endswith(".parquet")]
     tam = sum(arqs) / 2**30

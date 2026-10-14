@@ -201,7 +201,7 @@ A plataforma foi construída primeiro sobre infraestrutura local --- um \textit{
     Fonte: Autoria própria.
 \end{figure}
 
-Três diferenças estruturais separam esta arquitetura da implementação local que a precedeu.
+Duas diferenças estruturais separam esta arquitetura da implementação local que a precedeu.
 
 A primeira é que armazenamento e publicação deixaram de ser etapas distintas. Na versão local, o \textit{data lake} ficava em MinIO e uma rotina copiava as camadas tratadas para um repositório público de dados; na versão final, o repositório público \textbf{é} o \textit{data lake}. Cada camada da arquitetura Medalhão é um conjunto de dados no Hugging Face Hub --- seis ao todo, relacionados no \autoref{quadro:repositorios} ---, e cada etapa lê a camada anterior e grava a seguinte diretamente nele.
 
@@ -233,7 +233,7 @@ A primeira é que armazenamento e publicação deixaram de ser etapas distintas.
 
 A segunda é que o processamento não tem mais máquina fixa. Cada etapa roda em um executor efêmero do GitHub Actions, que é criado para a execução, instala as dependências, processa e é descartado. Nada persiste entre execuções além do que foi gravado no repositório de dados --- o que, como se verá na \autoref{subsec:orquestracao-pipeline}, determinou a forma de dividir o trabalho.
 
-A terceira é a supressão de uma camada. A implementação local tinha, entre a Silver e a Gold, uma subdivisão: uma Silver de mercado completo, com 14,1~GB, e uma Silver de TI, com 1,3~GB, restrita ao recorte. Na migração, verificou-se que nenhuma tabela da Gold em uso lia a Silver de mercado completo --- todas partem da Silver de TI ---, e mantê-la significaria traduzir a cada execução cerca de dez vezes mais dado do que a análise consome. A Silver passou a ser construída já restrita ao recorte, diretamente a partir da Bronze.
+A cadeia de camadas é Bronze, Silver de TI e Gold. A Silver não traduz o mercado inteiro para depois recortá-lo: como o recorte é definido de antemão pelos códigos de CBO e de CNAE, a tradução é aplicada só às linhas que pertencem a ele, diretamente a partir da Bronze. A alternativa --- uma Silver de mercado completo, da qual se extrairia a área de interesse --- teria volume da mesma ordem da Bronze, ou maior, já que a tradução acrescenta uma coluna de descrição ao lado de cada código, para servir a uma análise que consome 1,3~GB. Analisar outra área não exige essa camada intermediária: basta construir outra Silver a partir da mesma Bronze, com outro recorte.
 
 \subsection{Orquestração do \textit{Pipeline}}
 \label{subsec:orquestracao-pipeline}
