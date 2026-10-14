@@ -135,7 +135,7 @@ def sql_unificado(con, ano: int) -> str | None:
 
 def unificar_ano(con, ano: int) -> bool:
     # Idempotente e barato (exist_ok=True): não depende de quem chamou já ter
-    # criado o diretório — main() fazia isso, mas gold-analise-mercado-ti.py
+    # criado o diretório — main() fazia isso, mas gold-caged-consolidado.py
     # chama esta função direto, sem passar por main().
     DIR_SAIDA.mkdir(parents=True, exist_ok=True)
     destino = DIR_SAIDA / f"caged_ti_{ano}.parquet"

@@ -1,0 +1,35 @@
+name: Gold RAIS
+
+# Estoque de emprego em tecnologia, a partir da silver-rais-ti já publicada.
+# Independente das outras partes da gold (mapa, modelos, CAGED consolidado).
+
+on:
+  push:
+    paths:
+      - ".github/workflows/gold-rais.yml"
+      - "tasks-python/3-gold/gold-rais.py"
+      - "tasks-python/3-gold/gold_rais/**"
+      - "tasks-python/3-gold/gold_unificado/publicar_gold.py"
+      - "tasks-python/_utils/**"
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-actions.txt
+
+      - name: Reconstrói o estoque de emprego (RAIS)
+        working-directory: tasks-python/3-gold
+        run: python gold-rais.py

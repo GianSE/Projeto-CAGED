@@ -114,7 +114,7 @@ def consolidar_ano(con, tabela: str, ano: int) -> bool:
 
 def consolidar(con, tabela: str, ano_inicio: int = 0, ano_fim: int = 9999) -> int:
     # Idempotente e barato (exist_ok=True): não depende de quem chamou já ter
-    # criado o diretório — main() fazia isso, mas gold-analise-mercado-ti.py
+    # criado o diretório — main() fazia isso, mas gold-caged-consolidado.py
     # chama esta função direto, sem passar por main().
     DIR_SAIDA.mkdir(parents=True, exist_ok=True)
     anos = [a for a in anos_na_silver(con, tabela) if ano_inicio <= a <= ano_fim]

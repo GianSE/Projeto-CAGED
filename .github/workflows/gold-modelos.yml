@@ -1,13 +1,16 @@
-name: Gold análise mercado TI
+name: Gold modelos
 
-# Reconstrói os agregados finais a partir da silver-caged-ti/silver-rais-ti
-# já publicadas, e publica em Gianpedro/gold-analise-mercado-ti.
+# Previsão, nowcast, hiato salarial e sobrevivência de vínculo,
+# materializados na gold. Depende de gold-rais: nowcast lê
+# rais_estoque_anual, que é construído lá.
 
 on:
   push:
     paths:
-      - ".github/workflows/gold-analise-mercado-ti.yml"
-      - "tasks-python/3-gold/**"
+      - ".github/workflows/gold-modelos.yml"
+      - "tasks-python/3-gold/gold-modelos.py"
+      - "tasks-python/3-gold/ciencia_dados/**"
+      - "tasks-python/3-gold/gold_unificado/publicar_gold.py"
       - "tasks-python/_utils/**"
   workflow_dispatch:
   workflow_call:
@@ -28,6 +31,6 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-actions.txt
 
-      - name: Reconstrói e publica a gold
+      - name: Materializa os modelos (previsão, nowcast, hiato, sobrevivência)
         working-directory: tasks-python/3-gold
-        run: python gold-analise-mercado-ti.py
+        run: python gold-modelos.py

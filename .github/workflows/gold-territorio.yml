@@ -1,0 +1,37 @@
+name: Gold território
+
+# Mapa (RAIS + CAGED) e perfis de município (clusters), a partir das
+# silvers já publicadas. Independente de gold-rais: lê a silver direto,
+# não o agregado da RAIS.
+
+on:
+  push:
+    paths:
+      - ".github/workflows/gold-territorio.yml"
+      - "tasks-python/3-gold/gold-territorio.py"
+      - "tasks-python/3-gold/gold_unificado/mapa.py"
+      - "tasks-python/3-gold/ciencia_dados/clusters_municipios.py"
+      - "tasks-python/3-gold/gold_unificado/publicar_gold.py"
+      - "tasks-python/_utils/**"
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-actions.txt
+
+      - name: Reconstrói mapa e clusters de município
+        working-directory: tasks-python/3-gold
+        run: python gold-territorio.py

@@ -1,0 +1,37 @@
+name: Gold CAGED consolidado
+
+# Um parquet por tabela e por ano (pra servir por HTTPS) mais o arquivo
+# unificado das duas gerações, a partir da silver-caged-ti já publicada.
+# Publica no mesmo repositório da silver, como espelho pronto pra consulta
+# direta. Totalmente independente do resto da gold (RAIS, território,
+# modelos) — só depende de silver-caged-ti.
+
+on:
+  push:
+    paths:
+      - ".github/workflows/gold-caged-consolidado.yml"
+      - "tasks-python/3-gold/gold-caged-consolidado.py"
+      - "tasks-python/3-gold/gold_caged/**"
+      - "tasks-python/_utils/**"
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-actions.txt
+
+      - name: Consolida e unifica o CAGED, publica o espelho
+        working-directory: tasks-python/3-gold
+        run: python gold-caged-consolidado.py

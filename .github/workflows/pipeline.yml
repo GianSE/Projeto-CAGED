@@ -1,6 +1,6 @@
 name: Pipeline (orquestrador)
 
-# Chama os 6 workflows na ordem certa, como uma fila de dependência real
+# Chama os workflows na ordem certa, como uma fila de dependência real
 # (não só horário escalonado):
 #
 #   bronze-caged ┐
@@ -10,12 +10,26 @@ name: Pipeline (orquestrador)
 #        ├─ silver-caged-ti  (precisa de bronze-caged + dicionario)
 #        └─ silver-rais-ti   (precisa de bronze-rais + dicionario)
 #                │
-#                └─ gold-analise-mercado-ti  (precisa das duas silvers)
+#                ├─ gold-rais               (só silver-rais-ti)
+#                ├─ gold-territorio         (as duas silvers)
+#                ├─ gold-caged-consolidado  (só silver-caged-ti, publica
+#                │                           num repo separado, nunca
+#                │                           junta com o resto da gold)
+#                └─ gold-modelos            (as duas silvers + gold-rais,
+#                                            porque nowcast lê
+#                                            rais_estoque_anual já publicado)
+#
+# gold-rais, gold-territorio e gold-caged-consolidado são independentes
+# entre si e rodam em paralelo — cada um publica a própria fatia no
+# Hugging Face ao final (cada job tem seu próprio runner, sem disco
+# compartilhado com os outros). gold-modelos é o único com dependência
+# real dentro da gold: espera gold-rais terminar E publicar.
 #
 # "comecar_em" deixa pular camada: rodar só a partir da silver (bronze já
 # está em dia, só quer traduzir) ou só a gold (silvers já estão em dia, só
-# quer reagregar). Cada um dos 6 workflows também continua podendo ser
-# disparado SOLTO (tem o próprio workflow_dispatch) pra testar uma peça só.
+# quer reagregar). Cada workflow também continua podendo ser disparado
+# SOLTO (tem o próprio workflow_dispatch) pra testar uma peça só — e se só
+# um pedaço da gold quebrar, só ele precisa ser refeito.
 
 on:
   schedule:
@@ -92,8 +106,26 @@ jobs:
       ano_fim: ${{ github.event.inputs.ano_fim }}
     secrets: inherit
 
-  gold:
+  gold-rais:
+    needs: [decidir, silver-rais-ti]
+    if: needs.decidir.outputs.gold == 'true' && !failure() && !cancelled()
+    uses: ./.github/workflows/gold-rais.yml
+    secrets: inherit
+
+  gold-territorio:
     needs: [decidir, silver-caged-ti, silver-rais-ti]
     if: needs.decidir.outputs.gold == 'true' && !failure() && !cancelled()
-    uses: ./.github/workflows/gold-analise-mercado-ti.yml
+    uses: ./.github/workflows/gold-territorio.yml
+    secrets: inherit
+
+  gold-caged-consolidado:
+    needs: [decidir, silver-caged-ti]
+    if: needs.decidir.outputs.gold == 'true' && !failure() && !cancelled()
+    uses: ./.github/workflows/gold-caged-consolidado.yml
+    secrets: inherit
+
+  gold-modelos:
+    needs: [decidir, silver-caged-ti, silver-rais-ti, gold-rais]
+    if: needs.decidir.outputs.gold == 'true' && !failure() && !cancelled()
+    uses: ./.github/workflows/gold-modelos.yml
     secrets: inherit
